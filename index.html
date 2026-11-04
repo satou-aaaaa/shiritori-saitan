@@ -161,7 +161,7 @@ let mem = null; // 保存できない環境では、開いているあいだだ�
 const doneOf = (r) => !!r && r.res.length >= r.list.length, recOf = (r) => ({ r: r.res.map((x) => ({ m: x.m, d: x.d, h: x.h })) });
 // 終わった今日・上級の回を日ごとの記録に入れる（結果を見る前に別のタブが次の日を保存しても、終えた日を失わない）
 function bank(s, r) { const b = doneOf(r) ? (r.mode === "d" ? s.days : r.mode === "h" ? s.hdays : null) : null; if (!b || b[r.date]) return false; b[r.date] = recOf(r); return true; }
-function load() { let a = null, b = null; try { b = JSON.parse(localStorage.getItem(KEY)); } catch (e) {} try { a = mem !== null ? JSON.parse(mem) : null; } catch (e) {} if (a && a.v !== 1) a = null; if (b && b.v !== 1) b = null; if (!a || !b) return Object.assign(fresh(), a || b || {}); const [n, o] = (a.t || 0) >= (b.t || 0) ? [a, b] : [b, a]; const s = Object.assign(fresh(), n); for (const k in o) { if (k === "runs" || k === "t") continue; const x = o[k], y = n[k]; if (x && y && typeof x === "object" && typeof y === "object") { s[k] = Object.assign({}, x, y); for (const q in x) if (typeof x[q] === "number" && typeof y[q] === "number") s[k][q] = Math.max(x[q], y[q]); } else if (typeof x === "number" && typeof y === "number") s[k] = Math.max(x, y); else if (x === true) s[k] = true; } const ra = a.runs || {}, rb = b.runs || {}, prog = (r) => (r.res ? r.res.length : 0) * 1000 + (r.cur && r.cur.moves ? r.cur.moves : 0), idOf = (r) => JSON.stringify([r.list || null, r.id || null]); s.runs = Object.assign({}, n.runs); for (const m of new Set([...Object.keys(ra), ...Object.keys(rb)])) { const x = ra[m], y = rb[m]; if (x === undefined || y === undefined) { if (x || y) s.runs[m] = x || y; continue; } if (!x || !y) continue; if (x.date !== y.date) { const [w, l] = x.date > y.date ? [x, y] : [y, x]; bank(s, l); s.runs[m] = w; } else if (idOf(x) === idOf(y)) { const px = prog(x), py = prog(y); s.runs[m] = px > py ? x : py > px ? y : n.runs[m]; } } return s; }
+function load() { let a = null, b = null; try { b = JSON.parse(localStorage.getItem(KEY)); } catch (e) {} try { a = mem !== null ? JSON.parse(mem) : null; } catch (e) {} if (a && a.v !== 1) a = null; if (b && b.v !== 1) b = null; if (!a || !b) return Object.assign(fresh(), a || b || {}); const [n, o] = (a.t || 0) >= (b.t || 0) ? [a, b] : [b, a]; const s = Object.assign(fresh(), n); for (const k in o) { if (k === "runs" || k === "t") continue; const x = o[k], y = n[k]; if (x && y && typeof x === "object" && typeof y === "object") { s[k] = Object.assign({}, x, y); for (const q in x) if (typeof x[q] === "number" && typeof y[q] === "number") s[k][q] = Math.max(x[q], y[q]); } else if (typeof x === "number" && typeof y === "number") s[k] = Math.max(x, y); else if (x === true) s[k] = true; } const ra = a.runs || {}, rb = b.runs || {}, prog = (r) => (r.res ? r.res.length : 0) * 1e6 + (r.cur && r.cur.moves ? r.cur.moves : 0), idOf = (r) => JSON.stringify([r.list || null, r.id || null]); s.runs = Object.assign({}, n.runs); for (const m of new Set([...Object.keys(ra), ...Object.keys(rb)])) { const x = ra[m], y = rb[m]; if (x === undefined || y === undefined) { if (x || y) s.runs[m] = x || y; continue; } if (!x || !y) continue; if (x.date !== y.date) { const [w, l] = x.date > y.date ? [x, y] : [y, x]; bank(s, l); s.runs[m] = w; } else if (idOf(x) === idOf(y)) { const px = prog(x), py = prog(y); s.runs[m] = px > py ? x : py > px ? y : n.runs[m]; } } return s; }
 // 保存の前に読み直す（別のタブで進めた記録を消さない）
 function save(fn) { const s = load(); fn(s); s.t = Math.max(Date.now(), (s.t || 0) + 1); const j = JSON.stringify(s); try { localStorage.setItem(KEY, j); mem = null; } catch (e) { mem = j; } return s; }
 const prevDay = (k) => new Date(Date.parse(k) - 864e5).toISOString().slice(0, 10);
@@ -200,7 +200,7 @@ function home() {
     <div class="stats"><div><b>${streak(s.days)}</b><small>連続の日</small></div><div><b>${Object.keys(s.days).length}</b><small>遊んだ日</small></div><div><b>${s.trips}</b><small>つないだ問題</small></div></div>
     <p class="rank">称号：${rankOf(s.trips)}${nr ? `（あと${nr[0] - s.trips}問で${nr[1]}）` : ""}</p>
     ${footer()}`;
-  $("go-d").onclick = () => (done ? result("d", k) : startRun("d"));
+  $("go-d").onclick = () => (k !== todayKey() ? home() : done ? result("d", k) : startRun("d")); // 画面を開いたまま0時を過ぎたら、今日の状態に描き直す
   if ($("go-h")) $("go-h").onclick = () => (hdone ? result("h", k) : k === todayKey() ? startRun("h") : home()); // 画面を開いたまま0時を過ぎたら、翌日の上級は始めない
   $("go-p").onclick = practiceMenu;
   $("go-dex").onclick = dex;
@@ -234,6 +234,7 @@ function play() {
   const i = run.res.length;
   if (i >= run.list.length) return finish();
   const it = run.list[i], p = probOf(it), hard = it.lv === 3;
+  if (!p) { toast("問題を作れませんでした"); return home(); }
   const saved = run.cur && run.cur.i === i ? run.cur : { path: [], moves: 0, hints: 0 };
   const ok = valid(p, saved.path) && saved.moves >= saved.path.length;
   cur = { i, date: run.date, id: run.id, it, p, path: ok ? saved.path.slice() : [], moves: ok ? saved.moves : 0, hints: ok ? saved.hints || 0 : 0, hint: null, done: false, hard };
@@ -246,7 +247,7 @@ function play() {
     <div class="trip" id="trip"></div>
     <p class="ask" id="ask"></p>
     <div class="hand" id="hand"></div>
-    <div class="status"><span id="left"></span>${run.mode === "h" ? "<span>ヒントなし</span>" : `<button class="sub" id="hint" style="min-height:44px;padding:0 14px">ヒント</button>`}</div>
+    <div class="status"><span id="left"></span>${hard ? "<span>ヒントなし</span>" : `<button class="sub" id="hint" style="min-height:44px;padding:0 14px">ヒント</button>`}</div>
     <div class="row"><button class="sub" id="undo">ひとつ戻る</button></div>
     <div id="after"></div>`;
   $("back").onclick = home;
@@ -290,7 +291,7 @@ function put(h) {
 function undo() { if (cur.done || !cur.path.length) return; cur.path.pop(); cur.hint = null; keep(); paint(); }
 // ヒント：いまの字で始まり、目的にいちばん早く着ける札を光らせる（行き止まりなら戻るように知らせる）
 function hint() {
-  if (cur.done || cur.hints >= 2) return;
+  if (cur.done || cur.hard || cur.hints >= 2) return;
   const avail = cur.p.hand.filter((x) => !cur.path.includes(x)), b = T.best(lastOf(cur.path, cur.p), cur.p.g, avail);
   if (b == null) { toast("この先はつながりません。ひとつ戻ろう"); return; }
   cur.hint = b; cur.hints++; keep(); paint(); toast(`次は「${disp(b)}」`);
@@ -299,7 +300,9 @@ function arrive() {
   if (!same(load().runs[MODE])) { toast("別の画面で先に進んでいます"); return play(); }
   cur.done = true; buzz([10, 40, 10]);
   const p = cur.p, rec = { m: cur.moves, d: p.d, h: cur.hints }, st = starsOf(rec);
-  const s = save((s) => { const r = s.runs[MODE]; if (!same(r)) return; r.res.push(rec); r.cur = null; s.trips++; for (const h of [p.s, ...cur.path, p.g]) s.seen[yomi(h)] = (s.seen[yomi(h)] || 0) + 1; });
+  let saved = false;
+  const s = save((s) => { const r = s.runs[MODE]; if (!same(r)) return; saved = true; r.res.push(rec); r.cur = null; s.trips++; for (const h of [p.s, ...cur.path, p.g]) s.seen[yomi(h)] = (s.seen[yomi(h)] || 0) + 1; });
+  if (!saved) { toast("別の画面で先に進んでいます"); return play(); }
   paint();
   const r = s.runs[MODE], fin = r && r.res.length >= r.list.length;
   $("after").innerHTML = `<div class="verdict" role="status">
@@ -317,7 +320,8 @@ function finish() {
   const rec = { r: run.res.map((r) => ({ m: r.m, d: r.d, h: r.h })) };
   save((s2) => {
     first = bank(s2, run);
-    s2.runs[MODE] = null;
+    // 別のタブで同じモードの新しい回が始まっていたら、それは消さない
+    const c = s2.runs[MODE]; if (c && c.date === run.date && c.id === run.id) s2.runs[MODE] = null;
   });
   if (run.mode === "p") return result("p", run.date, false, { list: run.list, ...rec });
   result(run.mode, run.date, first);
