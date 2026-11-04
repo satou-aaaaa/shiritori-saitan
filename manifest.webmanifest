@@ -1,0 +1,17 @@
+{
+  "name": "しりとり最短",
+  "short_name": "しりとり最短",
+  "description": "手札の言葉で目的の言葉までしりとりでつなぐ1日3問の言葉パズル",
+  "lang": "ja",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#e6eddc",
+  "theme_color": "#e6eddc",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
