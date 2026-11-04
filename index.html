@@ -219,6 +219,7 @@ function startRun(mode, opt) {
   const k = todayKey();
   save((s) => {
     if (mode !== "p" && s.runs[mode] && s.runs[mode].date === k) return; // 続きから
+    if ((mode === "d" && s.days[k]) || (mode === "h" && s.hdays[k])) return; // 別のタブで今日の分を終えていたら、もう一度は始めない（ホームに戻る）
     const list = mode === "d" ? dailyList(k) : mode === "h" ? hardList(k) : [{ seed: Math.floor(Math.random() * 2 ** 31), lv: opt }];
     s.runs[mode] = { mode, date: k, list, res: [], cur: null, id: Date.now().toString(36) };
   });
@@ -264,7 +265,8 @@ function valid(p, path) {
   return true;
 }
 const same = (r) => r && cur && r.date === cur.date && r.id === cur.id && r.res.length === cur.i;
-function keep() { save((s) => { const r = s.runs[MODE]; if (same(r)) r.cur = { i: cur.i, path: cur.path, moves: cur.moves, hints: cur.hints }; }); }
+// 同じ問題で保存済みの道のほうが先なら、古いタブの道で上書きしない
+function keep() { save((s) => { const r = s.runs[MODE]; if (same(r) && !(r.cur && r.cur.i === cur.i && r.cur.moves > cur.moves)) r.cur = { i: cur.i, path: cur.path, moves: cur.moves, hints: cur.hints }; }); }
 function paint() {
   const p = cur.p, last = lastOf(cur.path, p), goal = T.head(yomi(p.g));
   const chain = [`<b class="s">${esc(disp(p.s))}</b>`, ...cur.path.map((h, n) => `<b class="${n === cur.path.length - 1 && !cur.done ? "c" : ""}">${esc(disp(h))}</b>`), ...(cur.done ? [`<b class="c">${esc(disp(p.g))}</b>`] : [])];
