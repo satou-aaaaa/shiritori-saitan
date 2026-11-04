@@ -1,4 +1,4 @@
-// しりとり最短の検査。言葉のデータ・問題の作り方（何千問、最短を別の数え方で）・3問の組み方・出す/戻る/ヒント・続きから・上級・言葉帳・記録・スマホ幅・PWA。
+// しりとり最短の検査。言葉のデータ・問題の作り方（何千問、最短を別の数え方で）・3問の組み方・出す/戻る/ヒント・続きから・上級・言葉帳・記録・スマホ幅・PWA・道しるべ・実績・カレンダー・あとから。
 // 使い方: node qa/run.mjs   失敗があれば終了コード 1。結果は qa-report/report.md。
 import { chromium } from "playwright";
 import { mkdirSync, writeFileSync, readFileSync } from "node:fs";
@@ -249,6 +249,142 @@ try {
     await pn.evaluate(() => { location.hash = ""; }); await pn.reload(); await pn.click("#go-p"); await pn.click('.lv button[data-lv="3"]');
     check("練習の上級も、ヒントのボタンが無く札が光らない", (await pn.locator("#hint").count()) === 0 && (await pn.locator("#hand button.ok").count()) === 0 && (await pn.evaluate(() => window.__sh.cur().hard)) === true);
     await pn.close(); }
+  // 6. 手ごたえ：道しるべ（最短の枚数のます）・ねらえる★・つながらない札はゆれる・着いたら★を押す
+  { const pg = await newPage(); await pg.click("#howto-ok"); await pg.click("#go-d");
+    const c0 = await curT(pg), pot = () => pg.locator("#par .pot .stars .off").textContent().then((t) => 3 - t.length);
+    check("道しるべ：最短の枚数だけ空のますが並び、目的の字と「ねらえる★3」が出る", (await pg.locator("#par .slots i").count()) === c0.p.d && (await pg.locator("#par .slots i.on").count()) === 0 && (await pg.textContent("#par")).includes(`最短${c0.p.d}枚`) && (await pg.textContent("#par .slots b")) === T.head(yomi(c0.p.g)) && (await pot()) === 3);
+    const lst = T.tail(yomi(c0.p.s)), wrong = c0.p.hand.find((h) => T.head(yomi(h)) !== lst);
+    await pg.click(`#hand button[data-h="${wrong}"]`);
+    check("つながらない札を押すと、その札がゆれる（出した回数は増えない）", (await pg.locator(`#hand button[data-h="${wrong}"].no`).count()) === 1 && (await curT(pg)).moves === 0);
+    const decoy = c0.p.hand.find((h) => T.head(yomi(h)) === lst && h !== c0.p.chain[0]), first = decoy != null ? decoy : c0.p.chain[0];
+    await pg.click(`#hand button[data-h="${first}"]`);
+    check("札を出すと、ますが1つうまり、出した札がはねる・ねらえる★は道が正しいかで変わらない（答えを言わない）", (await pg.locator("#par .slots i.on").count()) === 1 && (await pg.locator("#trip b.fx").count()) === 1 && (await pot()) === 3);
+    await pg.click("#undo");
+    check("ひとつ戻ると、ねらえる★が1つ減る（戻った分は★に響くと分かる）", (await pg.locator("#par .slots i.on").count()) === 0 && (await pot()) === 2);
+    await pg.click("#hint");
+    check("ヒントを使うと、ねらえる★がもう1つ減る", (await pot()) === 1);
+    await pg.evaluate(() => { const c = window.__sh.cur(); c.path = []; c.moves = 0; c.hints = 0; c.hint = null; }); await solveNow(pg);
+    check("最短で着くと「最短！」と★を1つずつ押し、札の列が波打ち、ますが金色になる", (await pg.textContent(".verdict .hd")).includes("最短！") && (await pg.locator(".verdict .stars .st").count()) === 3 && (await pg.locator(".verdict .stars .off .st").count()) === 0 && (await pg.locator("#trip.win").count()) === 1 && (await pg.locator("#par.win").count()) === 1);
+    await pg.close(); }
+
+  // 7. やりこみ：実績・カレンダー・取りこぼした日をあとから
+  const base = () => ({ v: 1, tut: true, days: {}, hdays: {}, adays: {}, seen: {}, trips: 0, runs: {}, kofi: {} });
+  const R3 = (ms, hs = [0, 0, 0]) => ({ r: ms.map((m, j) => ({ m: m + 2 + j, d: 2 + j, h: hs[j] })) }); // ms：最短より多く出した数
+  async function pageAt(day, w = 390, state = null) {
+    const pg = await browser.newPage({ viewport: { width: w, height: 844 } });
+    pg.on("pageerror", (e) => errors.push(e.stack));
+    pg.on("console", (m) => { if (m.type() === "error" && !isNoise(m.text())) errors.push(m.text()); });
+    await pg.addInitScript((at) => { const RD = Date, off = RD.parse(at) - RD.now(); window.Date = class extends RD { constructor(...a) { if (a.length) super(...a); else super(RD.now() + off); } static now() { return RD.now() + off; } }; }, day + "T03:00:00Z");
+    await pg.goto(url);
+    await pg.evaluate(([k, st]) => { localStorage.clear(); if (st) localStorage.setItem(k, JSON.stringify(st)); }, [KEY, state]);
+    await pg.reload();
+    return pg;
+  }
+  { // 実績の数え方（いまの記録から毎回数える）
+    const pa = await newPage();
+    const r = await pa.evaluate(() => {
+      const g = window.__sh, A = g.ACH, ids = A.map((a) => a[0]), W = g.T.W;
+      const R3 = (ms, hs = [0, 0, 0]) => ({ r: ms.map((m, j) => ({ m: m + 2 + j, d: 2 + j, h: hs[j] })) });
+      const st = { v: 1, days: {}, hdays: {}, adays: {}, seen: {}, trips: 0, runs: {}, kofi: {} };
+      for (let i = 0; i < 7; i++) st.days["2027-01-0" + (i + 1)] = i < 5 ? R3([0, 0, 0]) : R3([1, 0, 0], [0, 1, 0]);
+      st.hdays["2027-01-10"] = { r: [{ m: 5, d: 5, h: 0 }, { m: 6, d: 5, h: 0 }] };
+      st.adays["2027-01-20"] = R3([0, 0, 3]);
+      W.slice(0, 120).forEach((w) => (st.seen[w[1]] = 1)); st.days["2000-01-01"] = 1; // 形のちがう古い記録が混じっても止まらない
+      const t = g.tally(st), got = g.achGot(st);
+      const st2 = JSON.parse(JSON.stringify(st)); st2.hdays["2027-01-11"] = { r: [{ m: 5, d: 5, h: 0 }, { m: 5, d: 5, h: 0 }] }; for (const k of Object.keys(st2.seen).slice(30)) delete st2.seen[k]; st2.days["2027-01-06"] = R3([0, 0, 0]);
+      return { n: A.length, uniq: new Set(ids).size === A.length, grp: [0, 1, 2].map((x) => A.filter((a) => a[3] === x).length), t, got, got2: g.achGot(st2), empty: g.achGot({ days: {}, hdays: {}, seen: {} }).length, kana: (() => { const by = {}; for (const w of W) { const h = g.T.head(w[1]); if (!by[h]) by[h] = w[1]; } const ks = Object.keys(by), s1 = { seen: {} }, s2 = { seen: {} }; ks.slice(0, 40).forEach((h) => (s1.seen[by[h]] = 1)); ks.slice(0, 39).forEach((h) => (s2.seen[by[h]] = 1)); return g.achGot(s1).includes("kana40") && !g.achGot(s2).includes("kana40") && ks.length >= 40; })() };
+    });
+    check("実績は10〜14個・名前が重ならず、腕前・集める・続けるが3つ以上ずつ", r.n >= 10 && r.n <= 14 && r.uniq && r.grp.every((x) => x >= 3), r.grp.join("・"));
+    check("実績は記録から数える：遊んだ日7・全部最短の日5・上級1日（最短は0）・あとから1・ヒントなしで最短の問題20・言葉120", r.t.days === 7 && r.t.perfect === 5 && r.t.hard === 1 && r.t.hardP === 0 && r.t.late === 1 && r.t.par === 20 && r.t.words === 120 && ["perfect1", "hard1", "w100", "first", "d7", "late1"].every((x) => r.got.includes(x)) && !r.got.includes("perfect7") && !r.got.includes("hardP") && !r.got.includes("par30"), JSON.stringify(r.t));
+    check("実績：上級を全部最短でつなぐと「上級を最短で」・言葉を減らすと「言葉100」は消える（記録から数え直す）・記録が空なら実績は0", r.got2.includes("hardP") && !r.got2.includes("w100") && r.empty === 0);
+    check("実績：言葉帳の最初の字が40種類で「40の字」（39種類ではまだ）", r.kana);
+    await pa.close(); }
+  { // 取りこぼした日：何百日分作って、過去7日・始めた日より後・遊んでいない日だけ。その日の問題は日付どおり
+    const pl = await newPage();
+    const bad = await pl.evaluate(() => {
+      const g = window.__sh, out = [], day = (n) => new Date(Date.parse("2026-11-04") + n * 864e5).toISOString().slice(0, 10);
+      for (let n = 0; n < 700; n++) {
+        const k = day(n), s = { days: {}, adays: {} };
+        for (let j = Math.max(0, n - 12); j < n; j++) { const x = (j * 7 + n * 3) % 5; if (x === 0) s.days[day(j)] = { r: [] }; else if (x === 1) s.adays[day(j)] = { r: [] }; }
+        const L = g.lateDays(s, k), want = [];
+        for (let j = n - 1; j >= Math.max(0, n - 7); j--) if (!s.days[day(j)] && !s.adays[day(j)]) want.push(day(j));
+        if (JSON.stringify(L) !== JSON.stringify(want) || L.some((d) => d >= k || d < "2026-11-04")) out.push(k);
+      }
+      return out;
+    });
+    check("取りこぼした日は過去7日のうち遊んでいない日だけ・始めた日より前と今日は出ない（700日分）", bad.length === 0, bad.slice(0, 3).join(","));
+    await pl.close(); }
+  { // カレンダーの印とあとから遊ぶ（2026-11-20 として開く）
+    const st = base();
+    st.days["2026-11-19"] = R3([0, 0, 0]); st.days["2026-11-18"] = R3([0, 1, 0]); st.days["2026-11-17"] = R3([3, 3, 0], [1, 0, 0]);
+    st.hdays["2026-11-19"] = { r: [{ m: 5, d: 5, h: 0 }, { m: 5, d: 5, h: 0 }] };
+    const pc = await pageAt("2026-11-20", 390, st);
+    check("ホームのカレンダーのボタンに、あとから遊べる日の数が出る", (await pc.getAttribute("#go-cal", "aria-label")).includes("あとから遊べる日 4") && (await pc.textContent("#go-cal .badge")) === "▶4");
+    // 今日の3問を1枚だけ進めておく（あとから遊んでも消えない）
+    await pc.click("#go-d"); { const c = await curT(pc); await pc.click(`#hand button[data-h="${c.p.chain[0]}"]`); }
+    await pc.click("#back"); await pc.click("#go-cal");
+    const cls = (d) => pc.getAttribute(`.cal [data-k="2026-11-${d}"]`, "class");
+    check("カレンダー：全部★3の日は濃い・★2くらいは中・それより下は薄い、上級の日に「上」", (await cls(19)).includes("p3") && (await cls(18)).includes("p2") && (await cls(17)).includes("p1") && (await pc.textContent('.cal [data-k="2026-11-19"]')).includes("上"));
+    check("カレンダー：取りこぼした過去7日だけ押せる（8日前より前・始めた日より前と今日は押せない）", (await pc.locator(".cal button.miss").count()) === 4 && (await pc.locator('.cal button[data-k="2026-11-12"]').count()) === 0 && (await pc.locator('.cal button[data-k="2026-11-03"]').count()) === 0 && (await cls(20)).includes("today"));
+    check("カレンダー：連続の日は1以上のときだけ小さく出す・休んだ日を責める言葉を書かない", (await pc.textContent("header")).includes("連続 3日") && !/サボ|休んだ|さぼ|失敗|残念/.test(await pc.textContent("#app")));
+    check("カレンダー：始めた月より前と今月より先へは行けない", (await pc.isDisabled("#prev")) && (await pc.isDisabled("#next")));
+    await pc.click('.cal button[data-k="2026-11-16"]');
+    const late = await pc.evaluate(() => { const g = window.__sh, c = g.cur(), l = g.dailyList("2026-11-16"), p = g.probOf(l[0]); return { mode: g.mode(), ok: c.p.s === p.s && c.p.g === p.g && JSON.stringify(c.p.hand) === JSON.stringify(p.hand) && JSON.stringify(g.load().runs["a:2026-11-16"].list) === JSON.stringify(l) }; });
+    check("取りこぼした日を押すと、その日の今日の3問と同じ問題で遊べる（途中経過は日付ごとの入れ物）", late.mode === "a:2026-11-16" && late.ok && (await pc.textContent("header")).includes("あとから"));
+    const seen0 = await pc.evaluate(() => Object.keys(window.__sh.load().seen).length);
+    for (let j = 0; j < 3; j++) { await solveNow(pc); await pc.click("#next"); }
+    const after = await pc.evaluate(() => { const g = window.__sh, s = g.load(); return { days: Object.keys(s.days).length, a: !!s.adays["2026-11-16"], st: g.streak(s.days), seen: Object.keys(s.seen).length, d: s.runs.d && s.runs.d.cur ? s.runs.d.cur.path.length : -1, ra: s.runs.a, rs: s.runs["a:2026-11-16"], today: !!s.days["2026-11-20"] }; });
+    check("あとから遊んだ日は今日の記録・連続の日を増やさず、言葉帳には載り、今日の途中経過も消さない", after.a && after.days === 3 && !after.today && after.st === 3 && after.seen > seen0 && after.d === 1 && !after.ra && !after.rs, JSON.stringify(after));
+    check("あとから遊んだ結果：シェアと Ko-fi は出さず、新しい実績を「🏅 実績：」で小さく出す", (await pc.locator(".share").count()) === 0 && (await pc.locator(".kofi").count()) === 0 && (await pc.textContent("#achnew")).includes("🏅 実績：拾いもの"));
+    await pc.click("#go-cal");
+    check("あとから遊んだ日はカレンダーで ↺ に変わり、もう押せない", (await cls(16)).includes("late") && (await pc.textContent('.cal [data-k="2026-11-16"]')).includes("↺") && (await pc.locator(".cal button.miss").count()) === 3);
+    await pc.click("#back"); await pc.click("#go-ach");
+    check("実績の画面：取った実績は「達成」、まだの実績は条件と進み具合（3/7 など）", (await pc.locator(".ach").count()) === (await pc.evaluate(() => window.__sh.ACH.length)) && (await pc.textContent('.ach[data-id="late1"]')).includes("達成") && (await pc.textContent('.ach[data-id="d7"] .pg')) === "3/7" && (await pc.locator('.ach[data-id="d7"] .bar').count()) === 1);
+    await pc.close(); }
+  { // あとから：A日を途中まで → B日を始める → A日に戻ると続きから（前の日の途中を黙って消さない。CodeRabbit が前のゲームで指摘）
+    const pr = await pageAt("2026-11-20", 390, base());
+    const step = async () => { const c = await curT(pr); await pr.click(`#hand button[data-h="${c.p.chain[0]}"]`); };
+    await pr.click("#go-cal"); await pr.click('.cal button[data-k="2026-11-16"]'); await step();
+    await pr.click("#back"); await pr.click("#go-cal"); await pr.click('.cal button[data-k="2026-11-15"]'); await step();
+    await pr.click("#back"); await pr.click("#go-cal");
+    const mark = await pr.textContent('.cal button[data-k="2026-11-16"]');
+    await pr.click('.cal button[data-k="2026-11-16"]');
+    const back = await pr.evaluate(() => { const g = window.__sh, c = g.cur(), s = g.load(), p = g.probOf(g.dailyList("2026-11-16")[0]), r15 = s.runs["a:2026-11-15"]; return { a: c.p.s === p.s && c.path.length === 1 && c.moves === 1, b: !!r15 && r15.cur.path.length === 1 && JSON.stringify(r15.list) === JSON.stringify(g.dailyList("2026-11-15")) }; });
+    check("あとから：A日を途中まで→B日を始める→A日に戻ると続きから（B日の途中も残る・カレンダーに「続き」）", back.a && back.b && mark.includes("続き"), JSON.stringify(back));
+    await pr.close(); }
+  { // load：保存に失敗したあと、片方にしか無い新しいキー（adays）も失わない（両方を先に fresh() で補う）
+    const pn2 = await newPage();
+    check("保存に失敗したあと、片方の記録にしか無い「あとから」の記録も統合で失わない", await pn2.evaluate((K) => { const g = window.__sh, s0 = g.load(); const old = Object.assign({}, s0, { t: 9 }); delete old.adays; mem = JSON.stringify(Object.assign({}, s0, { t: 5, adays: { "2000-01-01": { r: [] } } })); localStorage.setItem(K, JSON.stringify(old)); const r = g.load(); mem = null; const r2 = (() => { mem = JSON.stringify(old); localStorage.setItem(K, JSON.stringify(Object.assign({}, s0, { t: 5, adays: { "2000-01-02": { r: [] } } }))); const x = g.load(); mem = null; return x; })(); return !!r.adays["2000-01-01"] && !!r2.adays["2000-01-02"]; }, KEY));
+    check("前の版の記録（adays が無い）を読んでも、あとからの入れ物ができて古い記録は消えない", await pn2.evaluate((K) => { localStorage.setItem(K, JSON.stringify({ v: 1, tut: true, days: { "2026-11-04": { r: [{ m: 2, d: 2, h: 0 }] } }, hdays: {}, seen: { ねこ: 1 }, trips: 3, runs: {}, kofi: {} })); const s = window.__sh.load(); return !!s.adays && !!s.days["2026-11-04"] && s.seen["ねこ"] === 1 && s.trips === 3; }, KEY));
+    await pn2.close(); }
+  { // 0時をまたいで8日前になった日は、カレンダーを開いたままでも始めない
+    const pz = await pageAt("2026-11-20", 390, base());
+    await pz.click("#go-cal");
+    await pz.evaluate(() => { const RD = Object.getPrototypeOf(Date), off = 7 * 864e5; const now = Date.now(); window.Date = class extends RD { constructor(...a) { if (a.length) super(...a); else super(now + off); } static now() { return now + off; } }; });
+    await pz.click('.cal button[data-k="2026-11-13"]');
+    check("開いたまま日付が進んで過去7日から外れた日は、あとから始めない", !(await pz.evaluate(() => window.__sh.mode())).startsWith("a"));
+    await pz.close(); }
+  { // 実績のあと：1回目の今日の3問を全部最短で終えると「はじめの一歩」「最短の日」が出て、結果を開き直すと出ない
+    const pf = await pageAt("2026-11-20", 390, base());
+    await pf.click("#go-d"); for (let j = 0; j < 3; j++) { await solveNow(pf); await pf.click("#next"); }
+    const a1 = await pf.textContent("#achnew").catch(() => "");
+    await pf.click("#back"); await pf.click("#go-d");
+    check("初めて今日の3問を終えると結果に「🏅 実績：はじめの一歩」、開き直すと出ない（うるさくしない）", a1.includes("はじめの一歩") && a1.includes("最短の日") && (await pf.locator("#achnew").count()) === 0);
+    check("今日の3問の結果はシェアの文がある（あとからとは別）", (await pf.locator(".share").count()) === 1);
+    await pf.close(); }
+  { // 320px・390px：ホーム・実績・カレンダー・あとから・結果が横にはみ出さず、押せる所は44px以上
+    const st = base(); st.days["2026-11-19"] = R3([0, 0, 0]); st.adays["2026-11-15"] = R3([1, 0, 0]);
+    mkdirSync(path.join(root, "qa-report"), { recursive: true });
+    for (const w of [320, 390]) {
+      const pw = await pageAt("2026-11-20", w, st), bad = [];
+      const look = async (name) => { await pw.waitForTimeout(700); await pw.screenshot({ path: path.join(root, `qa-report/${name}-${w}.png`), fullPage: true }); const r = await pw.evaluate(() => ({ over: document.documentElement.scrollWidth > innerWidth, small: [...document.querySelectorAll("button, a")].filter((e) => e.offsetParent && getComputedStyle(e).visibility !== "hidden" && e.getBoundingClientRect().height < 44).map((e) => e.textContent.trim() || e.id) })); if (r.over || r.small.length) bad.push(`${name}:${r.over ? "はみ出し" : ""}${r.small.join("/")}`); };
+      await look("home"); await pw.click("#go-ach"); await look("ach"); await pw.click("#back"); await pw.click("#go-cal"); await look("cal");
+      await pw.click('.cal button[data-k="2026-11-18"]'); { const c = await curT(pw); await pw.click(`#hand button[data-h="${c.p.chain[0]}"]`); } await look("late-play");
+      for (let j = 0; j < 3; j++) { await solveNow(pw); if (j === 0) await look("arrive"); await pw.click("#next"); }
+      await look("late-result"); await pw.click("#back"); await pw.click("#go-d"); for (let j = 0; j < 3; j++) { await solveNow(pw); await pw.click("#next"); } await look("result");
+      check(`幅${w}px：ホーム・実績・カレンダー・あとから・結果が横にはみ出さず、押せる所は44px以上`, bad.length === 0, bad.join(" "));
+      await pw.close();
+    } }
 } catch (e) {
   check("QA の操作が最後まで完了する", false, e.message.split("\n")[0]);
 } finally {
