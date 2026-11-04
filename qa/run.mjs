@@ -327,6 +327,11 @@ try {
     check("カレンダー：全部★3の日は濃い・★2くらいは中・それより下は薄い、上級の日に「上」", (await cls(19)).includes("p3") && (await cls(18)).includes("p2") && (await cls(17)).includes("p1") && (await pc.textContent('.cal [data-k="2026-11-19"]')).includes("上"));
     check("カレンダー：取りこぼした過去7日だけ押せる（8日前より前・始めた日より前と今日は押せない）", (await pc.locator(".cal button.miss").count()) === 4 && (await pc.locator('.cal button[data-k="2026-11-12"]').count()) === 0 && (await pc.locator('.cal button[data-k="2026-11-03"]').count()) === 0 && (await cls(20)).includes("today"));
     check("カレンダー：連続の日は1以上のときだけ小さく出す・休んだ日を責める言葉を書かない", (await pc.textContent("header")).includes("連続 3日") && !/サボ|休んだ|さぼ|失敗|残念/.test(await pc.textContent("#app")));
+    { // キーボードで選んだボタンに枠が出る（all:unset で消えない。2026-11-04 CodeRabbit の指摘）
+      await pc.keyboard.press("Shift");
+      const bad = await pc.evaluate(() => [...document.querySelectorAll("button:not([disabled]),a[href]")].filter((b) => b.checkVisibility()).filter((b) => { b.focus(); const cs = getComputedStyle(b); return !b.matches(":focus-visible") || cs.outlineStyle === "none" || parseFloat(cs.outlineWidth) < 2; }).map((b) => b.className || b.id || b.tagName));
+      check("キーボードで選んだボタン（カレンダーのあとから遊ぶ日も）に枠が出る", bad.length === 0 && (await pc.locator(".cal button.miss").count()) > 0, bad.join(","));
+    }
     check("カレンダー：始めた月より前と今月より先へは行けない", (await pc.isDisabled("#prev")) && (await pc.isDisabled("#next")));
     await pc.click('.cal button[data-k="2026-11-16"]');
     const late = await pc.evaluate(() => { const g = window.__sh, c = g.cur(), l = g.dailyList("2026-11-16"), p = g.probOf(l[0]); return { mode: g.mode(), ok: c.p.s === p.s && c.p.g === p.g && JSON.stringify(c.p.hand) === JSON.stringify(p.hand) && JSON.stringify(g.load().runs["a:2026-11-16"].list) === JSON.stringify(l) }; });
