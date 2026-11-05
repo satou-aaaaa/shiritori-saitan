@@ -389,7 +389,7 @@ try {
   { // とことん：問題が次々に出る・2枚→3枚→4枚→5枚・ヒントは🎫を使う・降りると自己ベスト（2026-11-05 satou さん「一日で遊べる量が少なすぎる」）
     const pe = await pageAt("2026-11-20", 390, base());
     check("とことんの並び（300回）：2枚3→3枚7→4枚20→5枚30、種はばらばら", await pe.evaluate(() => { const g = window.__sh; for (let n = 0; n < 300; n++) { const L = g.endlessList(); if (L.length !== 60 || new Set(L.map((x) => x.seed)).size < 59) return false; if (!L.every((x, i) => x.lv === (i < 3 ? 0 : i < 10 ? 1 : i < 30 ? 2 : 3))) return false; } return true; }));
-    check("とことんの問題（5回分）：どれも作れて、1回の中で同じ問題が出ず、最短の枚数が少しずつ増える", await pe.evaluate(() => { const g = window.__sh; for (let n = 0; n < 5; n++) { const P = g.endlessList().map(g.probOf); if (!P.every(Boolean)) return false; if (new Set(P.map((p) => p.s + ":" + p.g)).size !== P.length) return false; const d = P.map((p) => p.d); if (!d.every((x, i) => i === 0 || x >= d[i - 1])) return false; } return true; }));
+    check("とことんの問題（200回分）：どれも作れて、1回の中で同じ問題が出ず、最短の枚数が少しずつ増える", await pe.evaluate(() => { const g = window.__sh; for (let n = 0; n < 200; n++) { const P = g.endlessList().map(g.probOf); if (!P.every(Boolean)) return false; if (new Set(P.map((p) => p.s + ":" + p.g)).size !== P.length) return false; const d = P.map((p) => p.d); if (!d.every((x, i) => i === 0 || x >= d[i - 1])) return false; } return true; }));
     check("ホームに「とことん」の大きなボタン", (await pe.locator("#go-e.main").count()) === 1);
     await pe.click("#go-e");
     for (let j = 0; j < 3; j++) { await solveNow(pe); await pe.click("#next"); }

@@ -380,7 +380,7 @@ let mem = null; // 保存できない環境では、開いているあいだだ�
 const doneOf = (r) => !!r && r.res.length >= r.list.length, recOf = (r) => ({ r: r.res.map((x) => ({ m: x.m, d: x.d, h: x.h })) });
 // とことん：2枚3問→3枚7問→4枚20問→5枚30問を、毎回ちがう種で次々に出す（乱数は練習ととことんだけ）
 const ELIFE = 3, ERAMP = [[0, 3], [1, 7], [2, 20], [3, 30]];
-function endlessList() { const out = []; for (const [lv, n] of ERAMP) for (let j = 0; j < n; j++) out.push({ seed: Math.floor(Math.random() * 2 ** 31), lv }); return out; }
+function endlessList() { const out = [], seen = new Set(); for (const [lv, n] of ERAMP) for (let j = 0; j < n; j++) { let it, k, t = 0; do { it = { seed: Math.floor(Math.random() * 2 ** 31), lv }; const p = probOf(it); k = p ? p.s + ":" + p.g : null; } while ((!k || seen.has(k)) && ++t < 30); seen.add(k); out.push(it); } return out; } // 1回の中で同じ出発と目的の問題を出さない（2026-11-05 3000回に3回重なった）
 const lifeStr = (n) => "🎫".repeat(Math.max(0, n)) + `<span class="off">${"🎫".repeat(Math.max(0, ELIFE - n))}</span>`;
 // 終わった今日・上級の回を日ごとの記録に入れる（結果を見る前に別のタブが次の日を保存しても、終えた日を失わない）
 const runKey = (mode, date) => (mode === "a" ? "a:" + date : mode); // 途中経過の入れ物の名前（あとからは日付ごと）
