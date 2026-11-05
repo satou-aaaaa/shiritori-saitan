@@ -28,6 +28,7 @@ node qa/run.mjs   # 言葉のデータ・問題の作り方（4種類×2000問�
 - 実績（`ACH`）は記録（`days`・`hdays`・`adays`・`seen`）から毎回数える。新しく残すものは無く、回を始めたときの一覧 `a0` と比べて結果に「🏅 実績：」を出す。腕前・集める・続けるを混ぜる。実績を足したら QA の数（10〜14）も見直す。結果の画面には、まだの実績のうち目標にいちばん近いもの1つを「🎯 次の実績」で出す（`nextAch`。shared-workflows `routines/game-dev.md` 研究の要点 12）。
 - 取りこぼした日（`lateDays`：過去7日・`EPOCH` より後）は、カレンダーからその日の今日の3問（`dailyList(その日)`）をあとから遊べる。記録は `adays`、途中経過は日付ごとの `runs["a:日付"]`（別の日を始めても前の日の途中を消さない）。連続の日・今日の記録・シェア・Ko-fi には数えない（言葉帳・実績には数える）。連続の日は1以上のときだけ出す。
 - 共有は遊ぶ人が押したときに開くリンク（X・LINE・Web Share・コピー）だけ。シェアの文に言葉（答え）を出さない（🟩最短・🟨2枚まで多い・🟧もっと多い・💡ヒント）。
+- 性別に寄った言葉（gender-ng、shared-workflows template/qa/a11y.mjs の WORDS。`lib/gender-ng.js`。見やすさの検査の言葉探しは1段目のファイルだけを見るので、一覧そのものは lib/ に置く）は 2026-11-07 からの問題・とことん・練習で選ばない（`CUTOFF`・`make(…, ng)`）。過去の日の問題はそのまま（QA が `qa/before-cutoff.json` の指紋で400日分を見る）。データを作り直すときは作る段階で外す（`tools/make-data.py`）。
 - 文字は少なめ・一画面一問。お笑いの言葉は入れない（QA が見る）。ほかの作品の名前・キャラ・見た目は使わない。
 - 感想は「感想を送る」から GitHub の Issue フォーム（`.github/ISSUE_TEMPLATE/feedback.yml`、ラベル「感想」）を開くだけ。項目は shared-workflows の `template/.github/ISSUE_TEMPLATE/feedback.yml` と同じにし、名前・メールは聞かない。週1で shared-workflows `routines/game-feedback.md` が読んで直す。
 - 応援は Ko-fi（https://ko-fi.com/satouaaaaa）へのただのリンクだけ。今日の3問・上級を初めて終えて全部最短（ヒントなし）のときだけ、結果の画面の下に1行（共有フォルダ kofi/app-guide.md）。遊ぶのは無料のまま、有料版は置かない。

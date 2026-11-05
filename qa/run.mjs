@@ -26,8 +26,9 @@ const W = T.W, yomi = (i) => W[i][1];
   // 別の数え方：手札の並べ方を全部たどって、最短の枚数と通り数を数える
   const brute = (p) => { const goal = T.head(yomi(p.g)); let best = 99, ways = 0; const go = (last, used) => { if (used.length > best) return; if (last === goal && used.length) { if (used.length < best) { best = used.length; ways = 0; } ways++; return; } for (const h of p.hand) if (!used.includes(h) && T.head(yomi(h)) === last) go(T.tail(yomi(h)), used.concat(h)); }; if (T.tail(yomi(p.s)) === goal) return { d: 0, ways: 1 }; go(T.tail(yomi(p.s)), []); return { d: best, ways }; };
   const bad = [], same = [], ng = [];
-  for (let d = 0; d < 2000; d++) [...T.LV, T.HARD].forEach((L, i) => {
-    const seed = T.seedOf(`qa${d}:${i}`), p = T.make(seed, L), q = T.make(seed, L);
+  for (const ngf of [false, true]) for (let d = 0; d < 2000; d++) [...T.LV, T.HARD].forEach((L, i0) => { // ngf：性別に寄った言葉を外す作り方（2026-11-07 から）でも同じ決まりを守る
+    const i = ngf ? i0 + "ng" : i0, seed = T.seedOf(`qa${d}:${i0}`), p = T.make(seed, L, ngf), q = T.make(seed, L, ngf);
+    if (p && ngf && [p.s, p.g, ...p.hand].some((h) => T.NGI.has(h))) bad.push(`${d}:${i} 外す言葉`);
     if (!p) { bad.push(`${d}:${i} 作れない`); return; }
     if (JSON.stringify(p) !== JSON.stringify(q)) same.push(`${d}:${i}`);
     if (p.hand.length !== L.hand || new Set(p.hand).size !== L.hand || p.hand.includes(p.s) || p.hand.includes(p.g) || new Set(p.hand.map(yomi)).size !== L.hand) bad.push(`${d}:${i} 手札`);
@@ -36,9 +37,9 @@ const W = T.W, yomi = (i) => W[i][1];
     if (p.chain.every((h, k) => p.hand[k] === h)) bad.push(`${d}:${i} 札が答えの順`);
     if (d < 300) { const r = brute(p); if (r.d !== p.d || r.ways !== p.ways) ng.push(`${d}:${i} ${p.d}/${r.d} ${p.ways}/${r.ways}`); }
   });
-  check("どの問題も手札の枚数どおり・正しい道の札が入り、しりとりで目的に着く・札は答えの順に並ばない（4種類×2000問）", bad.length === 0, bad.slice(0, 3).join(","));
+  check("どの問題も手札の枚数どおり・正しい道の札が入り、しりとりで目的に着く・札は答えの順に並ばない（4種類×2000問。外す言葉を除いた作り方でも）", bad.length === 0, bad.slice(0, 3).join(","));
   check("同じ種からは同じ問題ができる（だれでも同じ問題）", same.length === 0, same.slice(0, 3).join(","));
-  check("最短の枚数と最短のつなぎ方の数が、別の数え方（全部の並べ方）と合う（4種類×300問）", ng.length === 0, ng.slice(0, 3).join(","));
+  check("最短の枚数と最短のつなぎ方の数が、別の数え方（全部の並べ方）と合う（4種類×300問。外す言葉を除いた作り方でも）", ng.length === 0, ng.slice(0, 3).join(","));
   { // ヒントの札は、そこから最短で着ける
     const hb = []; for (let d = 0; d < 300; d++) { const p = T.make(T.seedOf("h" + d), T.LV[d % 3]), b = T.best(T.tail(yomi(p.s)), p.g, p.hand); if (b == null || 1 + T.rest(T.tail(yomi(b)), T.head(yomi(p.g)), p.hand.filter((x) => x !== b)) !== p.d) hb.push(d); }
     check("ヒントの札を出すと、残りの札で最短のまま着ける", hb.length === 0, hb.slice(0, 3).join(",")); }
@@ -61,7 +62,7 @@ check("画面にお笑いの言葉を入れない（本物っぽく）", !/お�
   check("感想フォームは名前・メールを聞かない（楽しさ・よかった所・直してほしい所だけ）", /id: fun/.test(fy) && /id: good/.test(fy) && /id: fix/.test(fy) && !/id: (name|email|mail)/.test(fy)); }
 { const sw = readFileSync(path.join(root, "sw.js"), "utf8"), mf = JSON.parse(readFileSync(path.join(root, "manifest.webmanifest"), "utf8"));
   const shell = JSON.parse(sw.match(/SHELL = (\[[^\]]+\])/)[1].replace(/'/g, '"'));
-  const need = ["./index.html", "./transfer.js", "./gen.js", "./words.js", "./manifest.webmanifest", "./icon-192.png", "./icon-512.png"];
+  const need = ["./index.html", "./transfer.js", "./gen.js", "./words.js", "./lib/gender-ng.js", "./manifest.webmanifest", "./icon-192.png", "./icon-512.png"];
   check("PWA：ネットの返事の保存は、イベントの中で waitUntil に預ける（遅れて届いた新しい版も保存できる）", /e\.waitUntil\(Promise\.race\(\[net\.then[^\n]*wait\(15000\)[^\n]*wait\(60000\)\]\)\)/.test(sw));
   check("PWA：sw.js は画面のファイルを全部保存し、外へ何も送らない", need.every((f) => shell.includes(f)) && !/https?:\/\//.test(sw.replace(/^\/\/.*$/gm, "")));
   check("PWA：manifest にアイコン2つと名前がある", mf.name === "しりとり最短" && mf.icons.length >= 2 && mf.start_url === "./"); }
@@ -109,6 +110,29 @@ try {
     const d2 = await p2.evaluate(() => { const g = window.__sh; return JSON.stringify(g.dailyList("2026-12-01").map(g.probOf)); });
     await ctx.close();
     check("同じ日は別のブラウザで開いても同じ3問", sel.d1201 === d2); }
+
+  // 3b. 性別に寄った言葉（gender-ng.js）：2026-11-07 からの日・とことん・練習では選ばない。それより前の日は前の main と1字も変わらない（satou さん 2026-11-06 のカード）
+  { const { createHash } = await import("node:crypto"), { execFileSync } = await import("node:child_process"), { mkdtempSync } = await import("node:fs"), os = await import("node:os");
+    const GN = createRequire(import.meta.url)(path.join(root, "lib/gender-ng.js"));
+    { const a = readFileSync(path.join(root, "qa/a11y.mjs"), "utf8"), m = a.match(/const WORDS = \[([\s\S]*?)\n\];/), tw = m ? [...m[1].matchAll(/\["([^"]+)", "[^"]*"\]/g)].map((x) => x[1]) : [];
+      check("lib/gender-ng.js の一覧は見やすさの検査の WORDS（shared-workflows template/qa/a11y.mjs の写し）と同じ", tw.length > 30 && JSON.stringify(tw) === JSON.stringify(GN.NG), `${tw.length}/${GN.NG.length}`); }
+    const ngw = T.W.filter((w) => GN.hit(w[0]) || GN.hit(w[1])).map((w) => w[0]);
+    check("外す言葉を含む札が words.js の中で見分けられる（看護婦・主婦・嫁 など）", ngw.length === T.NGI.size && ["看護婦", "主婦", "嫁"].every((w) => ngw.includes(w)), ngw.join("・"));
+    const days = (from, n) => Array.from({ length: n }, (_, i) => new Date(Date.parse(from) + i * 864e5).toISOString().slice(0, 10));
+    const before = days("2025-10-03", 400), after = days("2026-11-07", 1096);
+    const got = await page.evaluate((ks) => { const g = window.__sh; return ks.map((k) => ({ k, items: [...g.dailyList(k), ...g.hardList(k)], j: JSON.stringify([...g.dailyList(k), ...g.hardList(k)].map(g.probOf)) })); }, before);
+    const fix = JSON.parse(readFileSync(path.join(root, "qa/before-cutoff.json"), "utf8")).days, diff = got.filter((x) => createHash("sha256").update(x.j).digest("hex").slice(0, 16) !== fix[x.k]).map((x) => x.k);
+    check("区切りの日より前の400日（〜2026-11-06）の今日の3問・上級は、gender-ng を入れる前と1字も変わらない（qa/before-cutoff.json の指紋）", before.length === 400 && before[399] === "2026-11-06" && Object.keys(fix).length === 400 && diff.length === 0, diff.slice(0, 3).join(","));
+    check("区切りの日より前の日の並び（保存する list）にも ng の印を付けない（続きからの回が前と同じ）", got.every((x) => x.items.every((it) => !("ng" in it))) && (await page.evaluate(() => window.__sh.dailyList("2026-11-07").every((it) => it.ng === 1))));
+    { let old = null; try { const dir = mkdtempSync(path.join(os.tmpdir(), "shiri-main-")); for (const f of ["gen.js", "words.js"]) writeFileSync(path.join(dir, f), execFileSync("git", ["-C", root, "show", "origin/main:" + f], { stdio: ["ignore", "pipe", "ignore"] })); old = createRequire(import.meta.url)(path.join(dir, "gen.js")); } catch (e) {}
+      if (old) { const lv = (x) => (x === 3 ? old.HARD : old.LV[x]), d2 = got.filter((x) => JSON.stringify(x.items.map((it) => old.make(it.seed, lv(it.lv)))) !== x.j).map((x) => x.k);
+        check("区切りの日より前の400日の今日の3問・上級は、いまの main（git show origin/main の gen.js・words.js）と完全に同じ", d2.length === 0, d2.slice(0, 3).join(",")); } }
+    const fut = await page.evaluate((ks) => { const g = window.__sh, W = g.T.W, bad = [], none = []; for (const k of ks) { const P = [...g.dailyList(k), ...g.hardList(k)].map(g.probOf); if (P.some((p) => !p)) { none.push(k); continue; } const txt = P.flatMap((p) => [p.s, p.g, ...p.hand, ...p.chain]).map((i) => W[i][0] + "/" + W[i][1]).join(" "); if (g.T.GN.hit(txt)) bad.push(k); } return { bad, none }; }, after);
+    check("区切りの日から3年分の今日の3問・上級は、出発・目的・手札・まよう札・答えの道のどこにも外す言葉が無い", fut.bad.length === 0 && fut.none.length === 0, [...fut.bad, ...fut.none].slice(0, 3).join(","));
+    { const sameDay = await page.evaluate((ks) => { const g = window.__sh; let n = 0, prev = null; for (const k of ks) { const sig = JSON.stringify(g.dailyList(k).map(g.probOf).map((p) => [p.s, p.g])); if (sig === prev) n++; prev = sig; } return n; }, after);
+      check("区切りの日から3年分も、前の日と同じ問題にならない", sameDay === 0); }
+    const ep = await page.evaluate(() => { const g = window.__sh, W = g.T.W; let bad = 0, n = 0, flag = true; for (let r = 0; r < 300; r++) { const L = g.endlessList(); flag = flag && L.every((it) => it.ng === 1); for (const p of L.map(g.probOf)) { n++; if (g.T.GN.hit([p.s, p.g, ...p.hand].map((i) => W[i][0] + "/" + W[i][1]).join(" "))) bad++; } } let pb = 0; for (let r = 0; r < 2000; r++) { const p = g.probOf({ seed: Math.floor(Math.random() * 2 ** 31), lv: r % 4, ng: 1 }); if (!p || g.T.GN.hit([p.s, p.g, ...p.hand].map((i) => W[i][0] + "/" + W[i][1]).join(" "))) pb++; } return { bad, n, flag, pb }; });
+    check("とことん（300回・18000問）と練習（2000問）に外す言葉が出ない", ep.flag && ep.bad === 0 && ep.pb === 0 && /\[\{ seed: Math\.floor\(Math\.random\(\) \* 2 \*\* 31\), lv: opt, ng: 1 \}\]/.test(html), `${ep.bad}/${ep.n}・練習${ep.pb}`); }
 
   // 4. 通しで遊ぶ
   check("初めて開くと遊び方が出る", await page.locator("#howto[open]").count() === 1);

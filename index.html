@@ -349,6 +349,7 @@ html.a11y-say body{padding-bottom:calc(64px + env(safe-area-inset-bottom,0px))!i
   <button class="main" id="howto-ok" style="width:100%">わかった</button>
 </dialog>
 <script src="words.js"></script>
+<script src="lib/gender-ng.js"></script>
 <script src="gen.js"></script>
 <script>
 "use strict";
@@ -364,10 +365,13 @@ const todayKey = () => jstNow().toISOString().slice(0, 10);
 const dayNo = (k) => Math.round((Date.parse(k) - Date.parse(EPOCH)) / 864e5) + 1;
 const lvOf = (lv) => (lv === 3 ? T.HARD : T.LV[lv]);
 // 今日の3問：ひと息・ふた息・ながい道。上級：5枚つなぐ2問（光らない・ヒントなし）
-const dailyList = (k) => T.LV.map((L, i) => ({ seed: T.seedOf(k + ":d:" + i), lv: i }));
-const hardList = (k) => [0, 1].map((i) => ({ seed: T.seedOf(k + ":h:" + i), lv: 3 }));
+// CUTOFF（日本時間）からの日は、性別に寄った言葉（lib/gender-ng.js）を選ばない（ng:1）。それより前の日は前と同じ問題（satou さん 2026-11-06 のカード）
+const CUTOFF = "2026-11-07";
+const ngOf = (k) => (k >= CUTOFF ? { ng: 1 } : {});
+const dailyList = (k) => T.LV.map((L, i) => ({ seed: T.seedOf(k + ":d:" + i), lv: i, ...ngOf(k) }));
+const hardList = (k) => [0, 1].map((i) => ({ seed: T.seedOf(k + ":h:" + i), lv: 3, ...ngOf(k) }));
 const cache = new Map();
-const probOf = (it) => { const k = it.seed + ":" + it.lv; if (!cache.has(k)) cache.set(k, T.make(it.seed, lvOf(it.lv))); return cache.get(k); };
+const probOf = (it) => { const k = it.seed + ":" + it.lv + ":" + (it.ng ? 1 : 0); if (!cache.has(k)) cache.set(k, T.make(it.seed, lvOf(it.lv), !!it.ng)); return cache.get(k); };
 // ★：最短で着けば3、2枚まで多いと2、それより多いと1。ヒント1回ごとに1つ減る（最低1）
 const starsOf = (r) => Math.max(1, (r.m === r.d ? 3 : r.m - r.d <= 2 ? 2 : 1) - (r.h || 0));
 // 着いたときの★：1つずつ押す
@@ -384,7 +388,7 @@ let mem = null; // 保存できない環境では、開いているあいだだ�
 const doneOf = (r) => !!r && r.res.length >= r.list.length, recOf = (r) => ({ r: r.res.map((x) => ({ m: x.m, d: x.d, h: x.h })) });
 // とことん：2枚3問→3枚7問→4枚20問→5枚30問を、毎回ちがう種で次々に出す（乱数は練習ととことんだけ）
 const ELIFE = 3, ERAMP = [[0, 3], [1, 7], [2, 20], [3, 30]];
-function endlessList() { const out = [], seen = new Set(); for (const [lv, n] of ERAMP) for (let j = 0; j < n; j++) { let it, k, t = 0; do { it = { seed: Math.floor(Math.random() * 2 ** 31), lv }; const p = probOf(it); k = p ? p.s + ":" + p.g : null; } while ((!k || seen.has(k)) && ++t < 30); seen.add(k); out.push(it); } return out; } // 1回の中で同じ出発と目的の問題を出さない（2026-11-05 3000回に3回重なった）
+function endlessList() { const out = [], seen = new Set(); for (const [lv, n] of ERAMP) for (let j = 0; j < n; j++) { let it, k, t = 0; do { it = { seed: Math.floor(Math.random() * 2 ** 31), lv, ng: 1 }; const p = probOf(it); k = p ? p.s + ":" + p.g : null; } while ((!k || seen.has(k)) && ++t < 30); seen.add(k); out.push(it); } return out; } // 1回の中で同じ出発と目的の問題を出さない（2026-11-05 3000回に3回重なった）
 const lifeStr = (n) => "🎫".repeat(Math.max(0, n)) + `<span class="off">${"🎫".repeat(Math.max(0, ELIFE - n))}</span>`;
 // 終わった今日・上級の回を日ごとの記録に入れる（結果を見る前に別のタブが次の日を保存しても、終えた日を失わない）
 const runKey = (mode, date) => (mode === "a" ? "a:" + date : mode); // 途中経過の入れ物の名前（あとからは日付ごと）
@@ -506,7 +510,7 @@ function startRun(mode, opt) {
     if (mode === "e") { const re = s.runs.e; if (re && !doneOf(re)) return; s.runs.e = { mode, date: k, list: endlessList(), res: [], cur: null, life: ELIFE, id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6), a0: achGot(s) }; return; } // とことん：途中なら続きから（日をまたいでも続けられる）
     if (mode !== "p" && s.runs[mode] && s.runs[mode].date === k) return; // 続きから
     if ((mode === "d" && s.days[k]) || (mode === "h" && s.hdays[k])) return; // 別のタブで今日の分を終えていたら、もう一度は始めない（ホームに戻る）
-    const list = mode === "d" ? dailyList(k) : mode === "h" ? hardList(k) : [{ seed: Math.floor(Math.random() * 2 ** 31), lv: opt }];
+    const list = mode === "d" ? dailyList(k) : mode === "h" ? hardList(k) : [{ seed: Math.floor(Math.random() * 2 ** 31), lv: opt, ng: 1 }];
     s.runs[mode] = { mode, date: k, list, res: [], cur: null, id: Date.now().toString(36), a0: achGot(s) };
   });
   if (ng) return cal();
