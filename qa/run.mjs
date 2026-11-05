@@ -51,7 +51,7 @@ check("別のタブで先に進んだ道を、古いタブの短い道で上書�
 const ext = [...html.matchAll(/(?:src|href)="(https?:[^"]+)"/g)].map((m) => m[1]).filter((u) => !/^https:\/\/fonts\.googleapis\.com(\/|$)|^https:\/\/ko-fi\.com\/satouaaaaa$/.test(u));
 check("外から読むのは文字（Google Fonts）だけ。スクリプト・広告・解析を入れない", ext.length === 0, ext.join(","));
 check("CSP で通信先を自分だけにしている", /connect-src 'self'/.test(html) && !/connect-src[^;"]*https/.test(html));
-check("Math.random は練習の問題の種だけ（今日の3問・上級は日付の種）", (html.match(/Math\.random/g) || []).length === 1 && !/Math\.random/.test(readFileSync(path.join(root, "gen.js"), "utf8")));
+check("Math.random は練習・とことんの問題の種だけ（今日の3問・上級は日付の種）", (html.match(/Math\.random/g) || []).length === 3 && !/Math\.random/.test(readFileSync(path.join(root, "gen.js"), "utf8")));
 check("画面にお笑いの言葉を入れない（本物っぽく）", !/お笑い|ギャグ|ボケ|ツッコミ|なんでやねん|（うそ）/.test(html));
 { const og = (k) => (html.match(new RegExp(`<meta (?:property|name)="${k}" content="([^"]+)"`)) || [])[1] || "";
   const png = readFileSync(path.join(root, "og.png"));
@@ -369,6 +369,29 @@ try {
     await pz.click('.cal button[data-k="2026-11-13"]');
     check("開いたまま日付が進んで過去7日から外れた日は、あとから始めない", !(await pz.evaluate(() => window.__sh.mode())).startsWith("a"));
     await pz.close(); }
+  { // とことん：問題が次々に出る・2枚→3枚→4枚→5枚・ヒントは🎫を使う・降りると自己ベスト（2026-11-05 satou さん「一日で遊べる量が少なすぎる」）
+    const pe = await pageAt("2026-11-20", 390, base());
+    check("とことんの並び（300回）：2枚3→3枚7→4枚20→5枚30、種はばらばら", await pe.evaluate(() => { const g = window.__sh; for (let n = 0; n < 300; n++) { const L = g.endlessList(); if (L.length !== 60 || new Set(L.map((x) => x.seed)).size < 59) return false; if (!L.every((x, i) => x.lv === (i < 3 ? 0 : i < 10 ? 1 : i < 30 ? 2 : 3))) return false; } return true; }));
+    check("とことんの問題（5回分）：どれも作れて、1回の中で同じ問題が出ず、最短の枚数が少しずつ増える", await pe.evaluate(() => { const g = window.__sh; for (let n = 0; n < 5; n++) { const P = g.endlessList().map(g.probOf); if (!P.every(Boolean)) return false; if (new Set(P.map((p) => p.s + ":" + p.g)).size !== P.length) return false; const d = P.map((p) => p.d); if (!d.every((x, i) => i === 0 || x >= d[i - 1])) return false; } return true; }));
+    check("ホームに「とことん」の大きなボタン", (await pe.locator("#go-e.main").count()) === 1);
+    await pe.click("#go-e");
+    for (let j = 0; j < 3; j++) { await solveNow(pe); await pe.click("#next"); }
+    check("とことんは何問目かを出し、🎫が3枚", (await pe.textContent("header")).includes("4問目") && (await pe.evaluate(() => window.__sh.load().runs.e.life)) === 3);
+    await pe.click("#hint");
+    check("とことんのヒントは🎫を1枚使う", (await pe.evaluate(() => window.__sh.load().runs.e.life)) === 2 && (await pe.textContent("#life")).length > 0);
+    await pe.click("#back"); await pe.click("#go-e");
+    check("とことんは途中で閉じても続きから（4問目・🎫2・ヒント1回のまま）", (await pe.textContent("header")).includes("4問目") && (await pe.evaluate(() => window.__sh.load().runs.e.life)) === 2 && (await pe.evaluate(() => window.__sh.cur().hints)) === 1);
+    await pe.click("#quit");
+    check("降りるとつないだ数と自己ベスト更新が出て、記録に残る（今日の記録・連続には入らない）", (await pe.textContent("#eres")).includes("3問") && (await pe.textContent("#ebest")).includes("自己ベスト更新") && (await pe.evaluate(() => { const s = window.__sh.load(); return s.ebest === 3 && !s.runs.e && Object.keys(s.days).length === 0; })));
+    check("終わりの画面に「もう一度とことん」の大きなボタン", (await pe.locator("#go-e.main").count()) === 1);
+    await pe.click("#go-e"); await pe.click("#quit");
+    check("ベストに届かないと、ベストと「あと何問で更新」を出し、ベストは下げない", (await pe.textContent("#ebest")).includes("あと4問で更新") && (await pe.evaluate(() => window.__sh.load().ebest)) === 3);
+    await pe.click("#go-e");
+    await pe.evaluate((k) => { const s = JSON.parse(localStorage.getItem(k)); s.runs.e.life = 0; localStorage.setItem(k, JSON.stringify(s)); }, KEY); await pe.click("#back"); await pe.click("#go-e");
+    check("🎫が無いとヒントは押せない", await pe.locator("#hint").isDisabled());
+    await pe.evaluate((k) => { const s = JSON.parse(localStorage.getItem(k)); s.runs.e.life = 3; s.runs.e.res = Array.from({ length: 30 }, () => ({ m: 2, d: 2, h: 0 })); s.runs.e.cur = null; localStorage.setItem(k, JSON.stringify(s)); }, KEY); await pe.click("#back"); await pe.click("#go-e");
+    check("とことんの5枚の問題は、札が光りヒントも使える（上級とちがう）", (await pe.textContent("header")).includes("5枚") && (await pe.locator("#hand button.ok").count()) > 0 && !(await pe.locator("#hint").isDisabled()));
+    await pe.close(); }
   { // 実績のあと：1回目の今日の3問を全部最短で終えると「はじめの一歩」「最短の日」が出て、結果を開き直すと出ない
     const pf = await pageAt("2026-11-20", 390, base());
     await pf.click("#go-d"); for (let j = 0; j < 3; j++) { await solveNow(pf); await pf.click("#next"); }
@@ -377,6 +400,7 @@ try {
     check("初めて今日の3問を終えると結果に「🏅 実績：はじめの一歩」、開き直すと出ない（うるさくしない）", a1.includes("はじめの一歩") && a1.includes("最短の日") && (await pf.locator("#achnew").count()) === 0);
     check("結果に「あと少しの実績」を1つだけ出す：まだの実績のうち目標にいちばん近いもの（取った・0のものは選ばない。研究の要点 12）", await pf.evaluate(() => { const g = window.__sh, s = g.load(), t = g.tally(s), nx = g.nextAch(s), el = document.querySelectorAll("#achnext"); if (!nx) return el.length === 0; const cand = g.ACH.filter((a) => t[a[4]] > 0 && t[a[4]] < a[5]); return el.length === 1 && el[0].textContent.includes(nx.name) && el[0].textContent.includes("あと" + nx.left) && cand.every((a) => t[a[4]] / a[5] <= nx.r + 1e-12) && !g.achGot(s).includes(nx.id); }) && await pf.evaluate(() => window.__sh.nextAch(window.__sh.load()) !== null));
     check("今日の3問の結果はシェアの文がある（あとからとは別）", (await pf.locator(".share").count()) === 1);
+    check("今日の3問の結果に「続けて遊ぶ：とことん」の大きなボタン", (await pf.locator("#go-e.main").count()) === 1);
     await pf.close(); }
   { // 320px・390px：ホーム・実績・カレンダー・あとから・結果が横にはみ出さず、押せる所は44px以上
     const st = base(); st.days["2026-11-19"] = R3([0, 0, 0]); st.adays["2026-11-15"] = R3([1, 0, 0]);
@@ -388,7 +412,8 @@ try {
       await pw.click('.cal button[data-k="2026-11-18"]'); { const c = await curT(pw); await pw.click(`#hand button[data-h="${c.p.chain[0]}"]`); } await look("late-play");
       for (let j = 0; j < 3; j++) { await solveNow(pw); if (j === 0) await look("arrive"); await pw.click("#next"); }
       await look("late-result"); await pw.click("#back"); await pw.click("#go-d"); for (let j = 0; j < 3; j++) { await solveNow(pw); await pw.click("#next"); } await look("result");
-      check(`幅${w}px：ホーム・実績・カレンダー・あとから・結果が横にはみ出さず、押せる所は44px以上`, bad.length === 0, bad.join(" "));
+      await pw.click("#go-e"); { const c = await curT(pw); await pw.click(`#hand button[data-h="${c.p.chain[0]}"]`); } await look("endless"); await pw.click("#quit"); await look("endless-end");
+      check(`幅${w}px：ホーム・実績・カレンダー・あとから・結果・とことん（遊ぶ・終わり）が横にはみ出さず、押せる所は44px以上`, bad.length === 0, bad.join(" "));
       await pw.close();
     } }
 } catch (e) {

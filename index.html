@@ -161,6 +161,7 @@ footer a{color:var(--ink2);min-height:44px;display:inline-flex;align-items:cente
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 /* all:unset のボタンでも枠が消えないよう、いちばん最後に強く書く */
 :is(.icon,button,a):focus-visible{outline:2px solid var(--route)!important;outline-offset:2px}
+.life{font-size:18px;letter-spacing:2px}.life .off{opacity:.25}
 </style>
 </head>
 <body>
@@ -206,11 +207,15 @@ const starStr = (s) => `<span class="stars" aria-label="星${s}つ">${"★".repe
 // ---- 記録（この端末の localStorage だけ）----
 // 進行中の遊びはモードごとに分けて持つ（練習を始めても今日・上級の途中経過を消さない）。seen：言葉のよみ → 使った回数
 // adays：取りこぼした日をあとから遊んだ記録（日付 → 今日の3問と同じ形）。連続の日・今日の記録・Ko-fi には数えない
-const fresh = () => ({ v: 1, days: {}, hdays: {}, adays: {}, seen: {}, trips: 0, runs: {}, tut: false, kofi: {} });
+const fresh = () => ({ v: 1, days: {}, hdays: {}, adays: {}, seen: {}, trips: 0, runs: {}, tut: false, kofi: {}, ebest: 0 });
 let MODE = "d";
 let mem = null; // 保存できない環境では、開いているあいだだけここに置く
 // 保存に失敗したあとはメモリと保存の両方を読む。記録（日ごとの結果・言葉帳）は合わせて数は高いほう、途中経過は同じ日・同じ問題なら進んだほう
 const doneOf = (r) => !!r && r.res.length >= r.list.length, recOf = (r) => ({ r: r.res.map((x) => ({ m: x.m, d: x.d, h: x.h })) });
+// とことん：2枚3問→3枚7問→4枚20問→5枚30問を、毎回ちがう種で次々に出す（乱数は練習ととことんだけ）
+const ELIFE = 3, ERAMP = [[0, 3], [1, 7], [2, 20], [3, 30]];
+function endlessList() { const out = []; for (const [lv, n] of ERAMP) for (let j = 0; j < n; j++) out.push({ seed: Math.floor(Math.random() * 2 ** 31), lv }); return out; }
+const lifeStr = (n) => "🎫".repeat(Math.max(0, n)) + `<span class="off">${"🎫".repeat(Math.max(0, ELIFE - n))}</span>`;
 // 終わった今日・上級の回を日ごとの記録に入れる（結果を見る前に別のタブが次の日を保存しても、終えた日を失わない）
 const runKey = (mode, date) => (mode === "a" ? "a:" + date : mode); // 途中経過の入れ物の名前（あとからは日付ごと）
 const bookOf = (s, m) => (m === "d" ? s.days : m === "h" ? s.hdays : m === "a" ? (s.adays = s.adays || {}) : null);
@@ -286,6 +291,7 @@ function home() {
     ${done ? `<div class="share">今日の結果　${done.r.map(sq).join("")}</div>` : ""}
     <button class="main" id="go-d">${done ? "今日の結果を見る" : rd ? `続きから（${rd.res.length + 1}問目）` : `今日の3問をつなぐ <small>#${dayNo(k)}</small>`}</button>
     ${done ? `<button class="main alt" id="go-h">${hdone ? "上級の結果を見る" : rh ? "上級の続きから" : "上級：5枚つなぐ2問（ヒントなし）"}</button>` : ""}
+    ${(() => { const re = s.runs.e && !doneOf(s.runs.e) ? s.runs.e : null; return `<button class="main alt" id="go-e">${re ? `とことんの続きから（${re.res.length + 1}問目）` : "とことん：何問続けてつなげる？"}${s.ebest ? ` <small>自己ベスト ${s.ebest}問</small>` : ""}</button>`; })()}
     <div class="row"><button class="sub" id="go-p">練習（何度でも）</button><button class="sub" id="go-dex">言葉帳 ${Object.keys(s.seen).length}語</button></div>
     <div class="row"><button class="sub" id="go-cal" aria-label="カレンダー${late.length ? `（あとから遊べる日 ${late.length}）` : ""}">カレンダー${late.length ? ` <small class="badge">▶${late.length}</small>` : ""}</button><button class="sub" id="go-ach">実績 ${ag}/${ACH.length}</button></div>
     <div class="stats"><div><b>${streak(s.days)}</b><small>連続の日</small></div><div><b>${Object.keys(s.days).length}</b><small>遊んだ日</small></div><div><b>${s.trips}</b><small>つないだ問題</small></div></div>
@@ -294,6 +300,7 @@ function home() {
   $("go-d").onclick = () => (k !== todayKey() ? home() : done ? result("d", k) : startRun("d")); // 画面を開いたまま0時を過ぎたら、今日の状態に描き直す
   if ($("go-h")) $("go-h").onclick = () => (hdone ? result("h", k) : k === todayKey() ? startRun("h") : home()); // 画面を開いたまま0時を過ぎたら、翌日の上級は始めない
   $("go-p").onclick = practiceMenu;
+  $("go-e").onclick = () => startRun("e");
   $("go-dex").onclick = dex;
   $("go-cal").onclick = () => cal();
   $("go-ach").onclick = achView;
@@ -323,6 +330,7 @@ function startRun(mode, opt) {
       s.runs[runKey("a", opt)] = { mode, date: opt, list: dailyList(opt), res: [], cur: null, id: "a" + opt, a0: achGot(s) };
       return;
     }
+    if (mode === "e") { const re = s.runs.e; if (re && !doneOf(re)) return; s.runs.e = { mode, date: k, list: endlessList(), res: [], cur: null, life: ELIFE, id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6), a0: achGot(s) }; return; } // とことん：途中なら続きから（日をまたいでも続けられる）
     if (mode !== "p" && s.runs[mode] && s.runs[mode].date === k) return; // 続きから
     if ((mode === "d" && s.days[k]) || (mode === "h" && s.hdays[k])) return; // 別のタブで今日の分を終えていたら、もう一度は始めない（ホームに戻る）
     const list = mode === "d" ? dailyList(k) : mode === "h" ? hardList(k) : [{ seed: Math.floor(Math.random() * 2 ** 31), lv: opt }];
@@ -340,27 +348,29 @@ function play() {
   if (!run) return home();
   const i = run.res.length;
   if (i >= run.list.length) return finish();
-  const it = run.list[i], p = probOf(it), hard = it.lv === 3;
+  const it = run.list[i], p = probOf(it), hard = it.lv === 3 && run.mode !== "e"; // とことんの5枚は、札が光りヒントも使える
   if (!p) { toast("問題を作れませんでした"); return home(); }
   const saved = run.cur && run.cur.i === i ? run.cur : { path: [], moves: 0, hints: 0 };
   const ok = valid(p, saved.path) && saved.moves >= saved.path.length;
   cur = { i, date: run.date, id: run.id, it, p, path: ok ? saved.path.slice() : [], moves: ok ? saved.moves : 0, hints: ok ? saved.hints || 0 : 0, hint: null, done: false, hard };
-  const label = run.mode === "h" ? "上級" : run.mode === "p" ? `練習・${p.lv}` : run.mode === "a" ? `${md(run.date)} あとから` : p.lv;
+  const label = run.mode === "h" ? "上級" : run.mode === "p" ? `練習・${p.lv}` : run.mode === "e" ? `とことん・${lvOf(it.lv).len}枚` : run.mode === "a" ? `${md(run.date)} あとから` : p.lv;
   app.innerHTML = `
     <header><button class="icon" id="back" aria-label="もどる">←</button>
-      <div class="dots" aria-label="${i + 1}問目／${run.list.length}問">${run.list.map((_, j) => `<i class="${j < i ? "done" : j === i ? "on" : ""}"></i>`).join("")}</div>
-      <span style="font-size:13px;color:var(--ink2)">${label} ${i + 1}/${run.list.length}</span></header>
+      ${run.mode === "e" ? `<span class="life" id="life" aria-label="ヒントに使える回数 ${run.life}">${lifeStr(run.life)}</span><span style="font-size:13px;color:var(--ink2)">${label} ${i + 1}問目${s.ebest ? `（ベスト ${s.ebest}）` : ""}</span></header>` : `<div class="dots" aria-label="${i + 1}問目／${run.list.length}問">${run.list.map((_, j) => `<i class="${j < i ? "done" : j === i ? "on" : ""}"></i>`).join("")}</div>
+      <span style="font-size:13px;color:var(--ink2)">${label} ${i + 1}/${run.list.length}</span></header>`}
     <div class="goal"><div class="w from"><small>出発</small><b>${esc(disp(p.s))}</b><span>${yomiMark(p.s, false, true)}</span></div><span>→</span><div class="w to"><small>目的</small><b>${esc(disp(p.g))}</b><span>${yomiMark(p.g, true, false)}</span></div></div>
     <div class="trip" id="trip"></div>
     <div class="par" id="par"></div>
     <p class="ask" id="ask"></p>
     <div class="hand" id="hand"></div>
-    <div class="status"><span id="left"></span>${hard ? "<span>ヒントなし</span>" : `<button class="sub" id="hint" style="min-height:44px;padding:0 14px">ヒント</button>`}</div>
+    <div class="status"><span id="left"></span>${hard ? "<span>ヒントなし</span>" : `<button class="sub" id="hint" style="min-height:44px;padding:0 14px">ヒント${run.mode === "e" ? "（🎫1）" : ""}</button>`}</div>
     <div class="row"><button class="sub" id="undo">ひとつ戻る</button></div>
+    ${run.mode === "e" ? `<p class="note">ヒント1回で🎫を1枚使います（🎫が無いとヒントは出ません）。</p><button class="sub" id="quit" style="width:100%">ここで降りる（${i}問で終える）</button>` : ""}
     <div id="after"></div>`;
   $("back").onclick = home;
   $("undo").onclick = undo;
   if ($("hint")) $("hint").onclick = hint;
+  if ($("quit")) $("quit").onclick = () => { if (cur && cur.done) return; finish(); };
   paint();
   window.scrollTo(0, 0);
 }
@@ -392,7 +402,7 @@ function paint() {
   $("hand").querySelectorAll("button[data-h]").forEach((b) => (b.onclick = () => put(+b.dataset.h)));
   $("left").textContent = cur.done ? "" : `出した回数 ${cur.moves}${cur.hints ? `・ヒント ${cur.hints}` : ""}`;
   $("undo").disabled = cur.done || !cur.path.length;
-  if ($("hint")) $("hint").disabled = cur.done || cur.hints >= 2;
+  if ($("hint")) $("hint").disabled = cur.done || cur.hints >= 2 || (MODE === "e" && lifeOf() <= 0);
 }
 function put(h) {
   if (cur.done || cur.path.includes(h)) return;
@@ -407,10 +417,12 @@ function put(h) {
 }
 function undo() { if (cur.done || !cur.path.length) return; cur.path.pop(); cur.hint = null; keep(); paint(); }
 // ヒント：いまの字で始まり、目的にいちばん早く着ける札を光らせる（行き止まりなら戻るように知らせる）
+const lifeOf = () => { const r = load().runs.e; return r ? r.life || 0 : 0; };
 function hint() {
   if (cur.done || cur.hard || cur.hints >= 2) return;
   const avail = cur.p.hand.filter((x) => !cur.path.includes(x)), b = T.best(lastOf(cur.path, cur.p), cur.p.g, avail);
   if (b == null) { toast("この先はつながりません。ひとつ戻ろう"); return; }
+  if (MODE === "e") { let ok = false; save((s) => { const r = s.runs.e; if (same(r) && (r.life || 0) > 0) { r.life--; ok = true; } }); if (!ok) return paint(); const l = $("life"); if (l) { l.innerHTML = lifeStr(lifeOf()); l.setAttribute("aria-label", "ヒントに使える回数 " + lifeOf()); } } // とことんはヒント1回で🎫1枚（行き止まりの知らせだけなら使わない）
   cur.hint = b; cur.hints++; keep(); paint(); toast(`次は「${disp(b)}」`);
 }
 function arrive() {
@@ -433,6 +445,7 @@ function arrive() {
 function finish() {
   const s = load(), run = s.runs[MODE];
   if (!run) return home();
+  if (run.mode === "e") return endFinish(run);
   let first = false, newAch = [];
   const rec = { r: run.res.map((r) => ({ m: r.m, d: r.d, h: r.h })) };
   save((s2) => {
@@ -444,6 +457,23 @@ function finish() {
   });
   if (run.mode === "p") return result("p", run.date, false, { list: run.list, ...rec }, newAch);
   result(run.mode, run.date, first, null, newAch);
+}
+// とことんの終わり：つないだ問題の数を自己ベストと比べる（他の人との順位は出さない）
+function endFinish(run) {
+  const n = run.res.length; let prev = 0, newAch = [];
+  save((s2) => { prev = s2.ebest || 0; s2.ebest = Math.max(prev, n); const c = s2.runs.e; if (c && c.id === run.id) s2.runs.e = null; if (Array.isArray(run.a0)) newAch = achGot(s2).filter((id) => !run.a0.includes(id)); });
+  const s = load(), best = n > prev && n > 0;
+  app.innerHTML = `
+    <header><button class="icon" id="back" aria-label="ホームへ">←</button><h1>しりとり最短<small>とことん</small></h1><span></span></header>
+    <p class="big" id="eres">${n}問 クリア</p>
+    <p class="note" id="ebest">${best ? "🎉 自己ベスト更新！" : !s.ebest ? "1問つなぐと自己ベストに残ります" : `自己ベスト ${s.ebest}問${s.ebest > n ? `（あと${s.ebest - n + 1}問で更新）` : ""}`}</p>
+    ${newAch.length ? `<p class="achnew" id="achnew">${newAch.map((id) => `🏅 実績：${ACH.find((a) => a[0] === id)[1]}`).join("<br>")}</p>` : ""}
+    ${n ? `<div class="res">${run.list.slice(0, n).map((it, j) => { const p = probOf(it), r = run.res[j]; return `<div><span>${esc(disp(p.s))} → ${esc(disp(p.g))}<br><small style="color:var(--ink2)">${r.m}回（最短${r.d}枚）${r.h ? `・ヒント${r.h}` : ""}</small></span>${starStr(starsOf(r))}</div>`; }).join("")}</div>` : ""}
+    <button class="main" id="go-e">もう一度とことん</button>
+    <div class="row"><button class="sub" id="go-p">練習する</button><button class="sub" id="go-dex">言葉帳を見る</button></div>
+    <p class="note"><a href="${FEEDBACK}" target="_blank" rel="noopener">感想を送る</a></p>`;
+  $("back").onclick = home; $("go-e").onclick = () => startRun("e"); $("go-p").onclick = practiceMenu; $("go-dex").onclick = dex;
+  window.scrollTo(0, 0);
 }
 // 共有の文：言葉（答え）は出さない。最短🟩・2枚まで多い🟨・それ以上🟧、ヒントを使ったら💡
 const sq = (r) => (r.h ? "💡" : r.m === r.d ? "🟩" : r.m - r.d <= 2 ? "🟨" : "🟧");
@@ -471,12 +501,14 @@ function result(mode, k, first, prec, newAch = []) {
     <button class="main" id="share">結果をシェア</button>
     <div class="shares"><a id="toX" target="_blank" rel="noopener">Xで投稿</a><a id="toLine" target="_blank" rel="noopener">LINEで送る</a><button id="copy">コピー</button></div>
     <p class="note">🟩最短　🟨2枚まで多い　🟧もっと多い　💡ヒント<br>次の3問まで あと <b>${untilNext()}</b></p>` : ""}
+    ${mode !== "p" ? `<button class="main" id="go-e">続けて遊ぶ：とことん${s.ebest ? `（ベスト ${s.ebest}問）` : ""}</button>` : ""}
     ${mode === "d" && k === todayKey() && !s.hdays[k] ? `<button class="main alt" id="go-h">上級：5枚つなぐ2問に挑む</button>` : ""}
     <div class="row"><button class="sub" id="go-p">練習する</button><button class="sub" id="go-dex">言葉帳を見る</button></div>
     ${showKofi ? `<p class="note kofi">楽しめたら、<a href="https://ko-fi.com/satouaaaaa" target="_blank" rel="noopener">Ko-fi でコーヒー1杯の応援</a>をもらえると、新しいゲームづくりの励みになります（任意・遊ぶのはずっと無料）。</p>` : ""}
     <p class="note"><a href="${FEEDBACK}" target="_blank" rel="noopener">感想を送る</a></p>`;
   $("back").onclick = home;
   $("go-p").onclick = practiceMenu;
+  if ($("go-e")) $("go-e").onclick = () => startRun("e");
   $("go-dex").onclick = dex;
   if ($("go-h")) $("go-h").onclick = () => (k === todayKey() ? startRun("h") : home()); // 画面を開いたまま0時を過ぎたら、翌日の上級は始めない
   if ($("go-cal")) $("go-cal").onclick = () => cal(k.slice(0, 7));
@@ -544,7 +576,7 @@ function cal(ym) {
   bindFooter(); window.scrollTo(0, 0);
 }
 
-window.__sh = { runKey, lateDays, ACH, achGot, nextAch, tally, cal, achView, mode: () => MODE, T, dailyList, hardList, probOf, starsOf, todayKey, dayNo, shareText, streak, load, valid, cur: () => cur, put: (h) => put(h), play: (m) => { if (m) MODE = m; play(); } };
+window.__sh = { endlessList, ELIFE, ERAMP, runKey, lateDays, ACH, achGot, nextAch, tally, cal, achView, mode: () => MODE, T, dailyList, hardList, probOf, starsOf, todayKey, dayNo, shareText, streak, load, valid, cur: () => cur, put: (h) => put(h), play: (m) => { if (m) MODE = m; play(); } };
 home();
 if ("serviceWorker" in navigator && location.protocol === "https:" && /github\.io$/.test(location.hostname)) navigator.serviceWorker.register("sw.js").catch(() => {});
 </script>
