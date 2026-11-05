@@ -7,9 +7,17 @@
 - よく使う名詞だけ（読みに ichi1 と news1、漢字の書き方にも ichi1 の印）。接頭語・接尾語・助数詞・代名詞は外す。
 - 読みは2〜5字。「ん」で終わる言葉は入れない（しりとりで使えない）。
 - つらい言葉（死・殺など）は使わない。
+- 性別に寄った言葉（lib/gender-ng.js の一覧。shared-workflows template/qa/a11y.mjs の WORDS）を含む言葉も使わない。
+  ※ 作り直すと過去の日の問題が変わる。いまの words.js は過去の日のために残し、2026-11-07 からは gen.js が選ばない。
 JMdict は © EDRDG、CC BY-SA 4.0。words.js も CC BY-SA 4.0。
 """
-import sqlite3, sys, collections, json
+import sqlite3, sys, collections, json, os, re
+
+# 性別に寄った言葉：lib/gender-ng.js の NG の並びを読む（一覧を1か所に置く）
+_g = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "lib", "gender-ng.js"), encoding="utf-8").read()
+GENDER_NG = re.findall(r'"([^"]+)"', re.search(r"var NG = \[([\s\S]*?)\];", _g).group(1))
+def gender_hit(t):
+    return any((re.search(r"(^|[^A-Za-z])OL($|[^A-Za-z])", t) if w == "OL" else w in t) for w in GENDER_NG)
 
 NG = set("死殺葬屍姦淫娼尿糞呪遺棺骸刑獄墓弔喪病癌毒虐暴拷凶犯罪賊奴隷傷害戦爆銃兵敵怨憎")
 c = sqlite3.connect(sys.argv[1])
@@ -41,6 +49,7 @@ for idseq in sorted(kana):
         disp = rt
     r = hira(rt)
     if not (2 <= len(r) <= 5) or r.endswith("ん") or set(disp) & NG: continue
+    if gender_hit(disp) or gender_hit(r): continue
     if not all("ぁ" <= ch <= "ゖ" or ch == "ー" for ch in r): continue
     if r in seen: continue  # 同じ読みは1つだけ
     seen.add(r)

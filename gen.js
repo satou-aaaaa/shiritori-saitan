@@ -2,6 +2,10 @@
 (function (root) {
   "use strict";
   const W = typeof module !== "undefined" ? require("./words.js") : root.SH_WORDS;
+  const GN = typeof module !== "undefined" ? require("./lib/gender-ng.js") : root.SH_GENDER_NG;
+  // 性別に寄った言葉（lib/gender-ng.js）を含む札。make(seed, L, true) のときだけ選ばない（2026-11-07 からの日・とことん・練習）
+  const NGI = new Set(); W.forEach((w, i) => { if (GN.hit(w[0]) || GN.hit(w[1])) NGI.add(i); });
+  const OKI = W.map((w, i) => i).filter((i) => !NGI.has(i));
   function rng(seed) { let a = seed >>> 0; return () => { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
   function seedOf(str) { let h = 2166136261; for (const ch of str) { h ^= ch.charCodeAt(0); h = Math.imul(h, 16777619); } return h >>> 0; }
   // 字のきまり：小さい字は大きい字に（ゃ→や）。のばす棒「ー」で終わるときは、その前の字
@@ -42,25 +46,26 @@
     for (const h of avail) { if (head(W[h][1]) !== last) continue; const r = rest(tail(W[h][1]), goal, avail.filter((x) => x !== h)); if (r >= 0 && r < bd) { bd = r; b = h; } }
     return b;
   }
-  function make(seed, L) {
-    const R = rng(seed), pick = (a) => a[Math.floor(R() * a.length)];
+  // ng が true のときは性別に寄った言葉（NGI）を出発・目的・札のどれにも選ばない。false のときは前と1字も変わらない（過去の日の問題を変えない）
+  function make(seed, L, ng) {
+    const R = rng(seed), pick = (a) => a[Math.floor(R() * a.length)], ok1 = (i) => !ng || !NGI.has(i);
     for (let t = 0; t < 3000; t++) {
       // 1. 正しい道を作る：出発 → 札1 → … → 札len → 目的。字は重ねない（近道ができないように）
-      const s = Math.floor(R() * W.length), chain = [], letters = [tail(W[s][1])];
+      const s = ng ? OKI[Math.floor(R() * OKI.length)] : Math.floor(R() * W.length), chain = [], letters = [tail(W[s][1])];
       let ok = true;
       for (let k = 0; k < L.len; k++) {
-        const c = (byHead[letters[letters.length - 1]] || []).filter((i) => i !== s && !chain.includes(i) && !letters.includes(tail(W[i][1])));
+        const c = (byHead[letters[letters.length - 1]] || []).filter((i) => i !== s && !chain.includes(i) && !letters.includes(tail(W[i][1])) && ok1(i));
         if (!c.length) { ok = false; break; }
         const w = pick(c); chain.push(w); letters.push(tail(W[w][1]));
       }
       if (!ok) continue;
-      const gs = (byHead[letters[letters.length - 1]] || []).filter((i) => i !== s && !chain.includes(i));
+      const gs = (byHead[letters[letters.length - 1]] || []).filter((i) => i !== s && !chain.includes(i) && ok1(i));
       if (!gs.length) continue;
       const g = pick(gs);
       // 2. まよう札：道の途中の字で始まる（選びたくなる）が、近道にならない札
       const hand = chain.slice(), tries = L.hand * 30;
       for (let k = 0; k < tries && hand.length < L.hand; k++) {
-        const from = pick(letters.slice(0, -1)), c = byHead[from] || [], w = pick(c);
+        const from = pick(letters.slice(0, -1)), c0 = byHead[from] || [], c = ng ? c0.filter(ok1) : c0, w = pick(c);
         if (w == null || w === s || w === g || hand.includes(w) || tail(W[w][1]) === head(W[g][1])) continue;
         if (hand.some((h) => W[h][1] === W[w][1])) continue;
         const r = shortest(s, g, hand.concat(w));
@@ -76,6 +81,6 @@
     }
     return null;
   }
-  const B = { rng, seedOf, LV, HARD, W, head, tail, big, shortest, rest, best, make };
+  const B = { rng, seedOf, LV, HARD, W, head, tail, big, shortest, rest, best, make, NGI, GN };
   if (typeof module !== "undefined") module.exports = B; else root.SHR = B;
 })(this);
