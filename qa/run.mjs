@@ -126,6 +126,9 @@ try {
   const first = decoy != null ? decoy : c.p.chain[0];
   await page.click(`#hand button[data-h="${first}"]`);
   let n1 = await curT(page);
+  { // 色だけで分けない（WCAG 1.4.1）：出した札は取り消し線・点線と aria-label「出した」
+    const u = await page.evaluate((h) => { const b = document.querySelector(`#hand button[data-h="${h}"]`); const cs = getComputedStyle(b); return { label: b.getAttribute("aria-label"), line: cs.textDecorationLine, border: cs.borderTopStyle }; }, first);
+    check("出した札は色のほかに取り消し線・点線の枠・読み上げの「出した」でも分かる", u.label.includes("出した") && u.line.includes("line-through") && u.border === "dashed", JSON.stringify(u)); }
   check("札を出すとつながり、出した回数が1になり、その札は使えなくなる", n1.path.join() === String(first) && n1.moves === 1 && (await page.locator(`#hand button[data-h="${first}"].used`).count()) === 1 && (await page.textContent("#trip")).includes(W[first][0]));
   await page.click("#undo");
   n1 = await curT(page);
@@ -133,6 +136,14 @@ try {
   await page.click("#hint");
   n1 = await curT(page);
   check("ヒントで、最短で着ける札が光る", n1.hints === 1 && n1.hint != null && 1 + T.rest(T.tail(yomi(n1.hint)), T.head(yomi(c.p.g)), c.p.hand.filter((x) => x !== n1.hint)) === c.p.d && (await page.locator("#hand button.hint").count()) === 1);
+  { // 色だけで分けない（WCAG 1.4.1）：出せる札は ●、ヒントの札は 💡 と aria-label。知らせは #sr（role=status）にも文字で出る
+    await page.waitForFunction(() => (document.getElementById("sr") || {}).textContent && document.getElementById("sr").textContent.includes("次は"), null, { timeout: 2000 }).catch(() => {});
+    const st = await page.evaluate(() => { const mk = (b) => getComputedStyle(b, "::before").content; const ok = [...document.querySelectorAll("#hand button.ok:not(.hint)")], hi = document.querySelector("#hand button.hint"); const sr = document.getElementById("sr");
+      const r = { ok: ok.length > 0 && ok.every((b) => mk(b).includes("●") && b.getAttribute("aria-label").includes("出せる")), hint: !!hi && mk(hi).includes("💡") && hi.getAttribute("aria-label").includes("ヒント"), plain: [...document.querySelectorAll("#hand button:not(.ok):not(.hint):not(.used)")].every((b) => mk(b) === "none" && !/出せる|ヒント/.test(b.getAttribute("aria-label"))), sr: !!sr && sr.getAttribute("role") === "status" && sr.textContent.includes("次は"), toastHidden: [...document.querySelectorAll(".toast")].every((d) => d.getAttribute("aria-hidden") === "true") };
+      document.documentElement.classList.add("a11y-cvd"); r.cvd = getComputedStyle(ok[0] || document.body).borderTopColor === "rgb(0, 114, 178)" && getComputedStyle(hi).borderTopStyle === "double"; document.documentElement.classList.remove("a11y-cvd"); return r; });
+    check("出せる札は ●・ヒントの札は 💡 と読み上げの名前でも分かり、ほかの札には付かない（色だけで分けない）", st.ok && st.hint && st.plain, JSON.stringify(st));
+    check("ヒントなどの知らせは #sr（role=status）に文字で出る（読み上げソフトに届く）", st.sr && st.toastHidden, JSON.stringify(st));
+    check("「色の見分けを助ける」で、出せる札は青 #0072B2・ヒントの札は二重の枠に替わる", st.cvd, JSON.stringify(st)); }
   await page.reload(); await page.click("#go-d");
   n1 = await curT(page);
   check("途中で閉じても、出した回数とヒントはそのまま（続きから）", n1.moves === 1 && n1.hints === 1 && (await page.textContent("#left")).includes("ヒント 1"));
@@ -142,6 +153,8 @@ try {
   await solveNow(page);
   n1 = await curT(page);
   check("目的の言葉につながると到着になり、1回多く＋ヒント1回で★1、最短のつなぎ方が出る", n1.done && n1.moves === c.p.d + 1 && (await page.locator(".verdict .stars .off").textContent()).length === 2 && /最短のつなぎ方/.test(await page.textContent(".verdict")));
+  await page.waitForFunction(() => document.getElementById("sr").textContent.includes("つながった"), null, { timeout: 2000 }).catch(() => {});
+  check("取れなかった★は ☆ で出し（色だけで分けない）、着いた知らせと★の数が #sr に文字で出る", (await page.locator(".verdict .stars .off").textContent()) === "☆☆" && /つながった！星1つ/.test(await page.textContent("#sr")) && (await page.locator("#par .pot .stars .off").count()) <= 1);
   await page.click("#next");
   // 別のタブで先に進んでいたら、古い画面の答えは足さない
   await page.evaluate((k) => { const s = JSON.parse(localStorage.getItem(k)); s.runs.d.res.push({ m: 3, d: 3, h: 0 }); localStorage.setItem(k, JSON.stringify(s)); }, KEY);
@@ -175,6 +188,7 @@ try {
   const after = await page.evaluate(() => { const s = window.__sh.load(); return { days: Object.keys(s.days).length, trips: s.trips, seen: Object.keys(s.seen).length }; });
   check("練習は今日の記録を増やさず、つないだ問題と言葉帳には入る", after.days === 1 && after.trips === 6 && after.seen >= 20 && (await page.locator(".share").count()) === 0);
   await page.click("#go-dex");
+  check("言葉帳のまだの字は、薄い色だけでなく点線の枠で分かる（色だけで分けない）", (await page.evaluate(() => { const d = document.querySelector(".dex div.no"); return !d || getComputedStyle(d).borderTopStyle === "dashed"; })));
   check("言葉帳に最初の字ごとの数が出る", (await page.locator(".dex div:not(.no)").count()) > 0 && (await page.textContent("h1")).includes(`${after.seen}/${W.length}`));
   await page.close();
 
@@ -253,6 +267,8 @@ try {
   // 6. 手ごたえ：道しるべ（最短の枚数のます）・ねらえる★・つながらない札はゆれる・着いたら★を押す
   { const pg = await newPage(); await pg.click("#howto-ok"); await pg.click("#go-d");
     const c0 = await curT(pg), pot = () => pg.locator("#par .pot .stars .off").textContent().then((t) => 3 - t.length);
+    { const sh = await pg.evaluate(() => { const on = document.querySelector(".dots i.on"), rest = document.querySelector(".dots i:not(.on)"), par = document.querySelector("#par .slots"); const i = document.createElement("i"); i.className = "over"; par.append(i); const ov = getComputedStyle(i).backgroundImage; i.remove(); return { dots: !on || !rest || on.getBoundingClientRect().height > rest.getBoundingClientRect().height, over: /gradient/.test(ov) }; });
+      check("進み具合の点は今の問題が高く、最短を越えたますは縞模様（色だけで分けない）", sh.dots && sh.over, JSON.stringify(sh)); }
     check("道しるべ：最短の枚数だけ空のますが並び、目的の字と「ねらえる★3」が出る", (await pg.locator("#par .slots i").count()) === c0.p.d && (await pg.locator("#par .slots i.on").count()) === 0 && (await pg.textContent("#par")).includes(`最短${c0.p.d}枚`) && (await pg.textContent("#par .slots b")) === T.head(yomi(c0.p.g)) && (await pot()) === 3);
     const lst = T.tail(yomi(c0.p.s)), wrong = c0.p.hand.find((h) => T.head(yomi(h)) !== lst);
     await pg.click(`#hand button[data-h="${wrong}"]`);
@@ -426,6 +442,12 @@ try {
   await browser.close();
 }
 check("画面のエラーが無い", errors.length === 0, errors.slice(0, 3).join(" | "));
+
+{ // 見やすさ・読みやすさ・偏り（shared-workflows template/qa/a11y.mjs の写し。routines/game-dev.md「だれでも遊べるように」）
+  const { spawnSync } = await import("node:child_process");
+  const a = spawnSync(process.execPath, [path.join(root, "qa", "a11y.mjs")], { encoding: "utf8", env: process.env });
+  check("見やすさ・読みやすさの検査（qa/a11y.mjs。中身は qa-report/a11y.md）", a.status === 0, (a.stdout.match(/^- ❌.*$/gm) || []).join(" / ") || (a.status ? a.stderr.slice(-300) : ""));
+}
 
 const ng = results.filter((r) => !r.ok);
 const md = `# しりとり最短 QA\n\n${results.map((r) => `- ${r.ok ? "✅" : "❌"} ${r.name}${r.detail ? `（${r.detail}）` : ""}`).join("\n")}\n\n${ng.length ? `❌ ${ng.length}件` : `✅ ${results.length}項目すべて通過`}\n`;
