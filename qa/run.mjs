@@ -236,6 +236,30 @@ try {
     const over = await pl.evaluate(() => { const b = document.querySelector("#hand button"); return b.scrollWidth > b.clientWidth + 1; });
     check("いちばん長い言葉の札でも、幅320pxで札からはみ出さない", !over, W[longest][0]);
     await pl.close(); }
+  // 6. スマホではじめて遊ぶ人の見やすさ（2026-11-07 UI/UX の見直し）
+  for (const [w, h] of [[390, 844], [320, 640]]) {
+    const pu = await newPage(w, h); await pu.click("#howto-ok");
+    const hm = await pu.evaluate(() => {
+      const r = $("go-d").getBoundingClientRect(), one = (el) => { const rg = document.createRange(); rg.selectNodeContents(el); return new Set([...rg.getClientRects()].map((x) => Math.round(x.top))).size === 1; };
+      const labels = ["go-d", "go-h", "go-e", "go-p", "go-dex", "go-cal", "go-ach"].map((id) => $(id));
+      return { inView: r.bottom <= innerHeight && r.top >= 0, lead: [...document.querySelectorAll(".lead span")].every(one) && document.querySelectorAll(".lead span").length >= 4, btn: labels.filter((b) => ![...b.childNodes].filter((n) => n.nodeType === 3 ? n.textContent.trim() : n.nodeName === "SMALL").every((n) => { if (n.nodeType !== 3) return one(n); const rg = document.createRange(); rg.selectNodeContents(n); const t = new Set([...rg.getClientRects()].map((x) => Math.round(x.top))); return t.size <= 1; })).map((b) => b.id), stats: document.querySelectorAll(".stats").length, over: document.documentElement.scrollWidth > innerWidth };
+    });
+    check(`幅${w}px：ホームの「今日の3問をつなぐ」は最初の画面に入り、説明の文・ボタンの文字は言葉の途中で折り返さない`, hm.inView && hm.lead && hm.btn.length === 0 && !hm.over, JSON.stringify(hm));
+    check(`幅${w}px：はじめての人のホームに、0 だけの記録の欄を出さない`, hm.stats === 0);
+    await pu.click("#go-d");
+    for (let n = 0; n < 3; n++) {
+      await solveNow(pu); await pu.waitForTimeout(150);
+      if (n === 0) { const af = await pu.evaluate(() => { const r = $("next").getBoundingClientRect(); return { ctl: $("ctl").hidden && !$("undo").offsetParent && !$("hint").offsetParent, next: r.bottom <= innerHeight + 1 && r.top >= 0 }; });
+        check(`幅${w}px：着いたら、もう押せないヒント・ひとつ戻るを隠し、「次の問題へ」が画面に入る`, af.ctl && af.next, JSON.stringify(af)); }
+      await pu.click("#next");
+    }
+    const rs = await pu.evaluate(() => { const b = document.querySelector(".big").getBoundingClientRect(); return { y: scrollY, top: b.top >= 0 && b.bottom <= innerHeight, legend: [...document.querySelectorAll(".legend span")].every((el) => el.getClientRects().length === 1) }; });
+    check(`幅${w}px：結果の画面は上から始まり、見出し（全部、最短でつないだ！など）が見える・色の見本は言葉の途中で折り返さない`, rs.y === 0 && rs.top && rs.legend, JSON.stringify(rs));
+    await pu.click("#back");
+    check(`幅${w}px：遊んだあとのホームは上から始まり、記録の欄が出る`, (await pu.evaluate(() => scrollY)) === 0 && (await pu.locator(".stats").count()) === 1);
+    await pu.close();
+  }
+  check("とことんのヒントの説明は「何も減りません（★が減るだけ）」のような食いちがう言い方をしない", !/何も減りません（★が減るだけ）/.test(html) && /使っても続けられます/.test(html));
   { // 保存してあった札の並びが壊れていたら使わない
     const pv = await newPage(); await pv.click("#howto-ok");
     await pv.evaluate((k) => { const g = window.__sh, d = g.todayKey(), p = g.probOf(g.dailyList(d)[0]); const bad = p.hand.find((h) => g.T.head(g.T.W[h][1]) !== g.T.tail(g.T.W[p.s][1])); localStorage.setItem(k, JSON.stringify({ v: 1, tut: true, days: {}, hdays: {}, seen: {}, trips: 0, kofi: {}, runs: { d: { mode: "d", date: d, list: g.dailyList(d), res: [], cur: { i: 0, path: [bad], moves: 1, hints: 0 }, id: "a" } } })); }, KEY);
