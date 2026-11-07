@@ -249,12 +249,12 @@ try {
     await pu.click("#go-d");
     for (let n = 0; n < 3; n++) {
       await solveNow(pu); await pu.waitForTimeout(150);
-      if (n === 0) { const af = await pu.evaluate(() => { const r = $("next").getBoundingClientRect(); return { ctl: $("ctl").hidden && !$("undo").offsetParent && !$("hint").offsetParent, next: r.bottom <= innerHeight + 1 && r.top >= 0 }; });
-        check(`幅${w}px：着いたら、もう押せないヒント・ひとつ戻るを隠し、「次の問題へ」が画面に入る`, af.ctl && af.next, JSON.stringify(af)); }
+      if (n === 0) { const af = await pu.evaluate(() => { const r = $("next").getBoundingClientRect(); const inV = (el) => { if (!el || !el.offsetParent) return false; const q = el.getBoundingClientRect(); return q.top >= 0 && q.bottom <= innerHeight + 1; }; return { ctl: $("ctl").hidden && !$("undo").offsetParent && !$("hint").offsetParent, next: r.bottom <= innerHeight + 1 && r.top >= 0, hd: inV(document.querySelector("#after .verdict .hd")), note: inV(document.querySelector("#after .verdict .note")) }; });
+        check(`幅${w}px：着いたら、もう押せないヒント・ひとつ戻るを隠し、札の下の結果の見出し・説明と「次の問題へ」が画面に入る`, af.ctl && af.next && af.hd && af.note, JSON.stringify(af)); }
       await pu.click("#next");
     }
-    const rs = await pu.evaluate(() => { const b = document.querySelector(".big").getBoundingClientRect(); return { y: scrollY, top: b.top >= 0 && b.bottom <= innerHeight, legend: [...document.querySelectorAll(".legend span")].every((el) => el.getClientRects().length === 1) }; });
-    check(`幅${w}px：結果の画面は上から始まり、見出し（全部、最短でつないだ！など）が見える・色の見本は言葉の途中で折り返さない`, rs.y === 0 && rs.top && rs.legend, JSON.stringify(rs));
+    const rs = await pu.evaluate(() => { const b = document.querySelector(".big").getBoundingClientRect(); return { y: scrollY, top: b.top >= 0 && b.bottom <= innerHeight, legend: [...document.querySelectorAll(".legend span")].every((el) => el.getClientRects().length === 1), legendN: document.querySelectorAll(".legend span").length }; });
+    check(`幅${w}px：結果の画面は上から始まり、見出し（全部、最短でつないだ！など）が見える・色の見本は言葉の途中で折り返さない`, rs.y === 0 && rs.top && rs.legend && rs.legendN >= 4, JSON.stringify(rs));
     await pu.click("#back");
     check(`幅${w}px：遊んだあとのホームは上から始まり、記録の欄が出る`, (await pu.evaluate(() => scrollY)) === 0 && (await pu.locator(".stats").count()) === 1);
     await pu.close();
