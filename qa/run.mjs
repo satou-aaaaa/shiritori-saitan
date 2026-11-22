@@ -12,7 +12,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const url = pathToFileURL(path.join(root, "index.html")).href;
 const results = [];
 const check = (name, ok, detail = "") => results.push({ name, ok: !!ok, detail });
-const firstClose = async (q) => { if (await q.locator("#howto[open]").count()) await q.click("#howto-ok"); if (await q.locator("#core-coach").count()) { await q.evaluate(() => Core.coach.leave()); await q.waitForTimeout(100); } }; // はじめての練習の吹き出しをやめてホームへ（sync-template の migrateFirstQa が足した）
+const firstClose = async (q) => { if (await q.locator("#howto[open]").count()) await q.click("#howto-ok"); if (await q.evaluate(() => !!(window.Core && Core.coach && Core.coach.active()))) { await q.evaluate(() => { Core.coach.leave(); scrollTo(0, 0); }); await q.waitForTimeout(100); } }; // はじめての練習の吹き出しをやめてホームへ（sync-template の migrateFirstQa が足した）
 const T = createRequire(import.meta.url)(path.join(root, "gen.js"));
 const W = T.W, yomi = (i) => W[i][1];
 
@@ -227,7 +227,7 @@ try {
 
   // 5. スマホ幅：はみ出さない・押せる所は44px以上（上級の12枚でも）
   for (const w of [320, 390]) {
-    const p3 = await newPage(w, 700); await firstClose(p3).then(() => p3.click("#f-how")); const fb2 = await p3.evaluate(() => { const a = document.querySelector("#howto #fb2"); return a ? a.getBoundingClientRect().height : 0; }); check(`幅${w}px：遊び方の「感想を送る」も高さ44px以上`, fb2 >= 44, `${fb2}px`); await firstClose(p3);
+    const p3 = await newPage(w, 700); await firstClose(p3).then(() => p3.evaluate(() => openHow())); const fb2 = await p3.evaluate(() => { const a = document.querySelector("#howto #fb2"); return a ? a.getBoundingClientRect().height : 0; }); check(`幅${w}px：遊び方の「感想を送る」も高さ44px以上`, fb2 >= 44, `${fb2}px`); await firstClose(p3);
     const homeOk = await p3.evaluate(() => document.documentElement.scrollWidth <= innerWidth);
     await p3.click("#go-d");
     const r = await p3.evaluate(() => ({ over: document.documentElement.scrollWidth > innerWidth, small: [...document.querySelectorAll("button, a")].filter((e) => e.offsetParent && Math.round(e.getBoundingClientRect().height) < 44).map((e) => e.id || e.textContent.trim().slice(0, 6)) }));
@@ -456,6 +456,7 @@ try {
     check("とことんの並び（300回）：2枚3→3枚7→4枚20→5枚30、種はばらばら", await pe.evaluate(() => { const g = window.__sh; for (let n = 0; n < 300; n++) { const L = g.endlessList(); if (L.length !== 60 || new Set(L.map((x) => x.seed)).size < 59) return false; if (!L.every((x, i) => x.lv === (i < 3 ? 0 : i < 10 ? 1 : i < 30 ? 2 : 3))) return false; } return true; }));
     check("とことんの問題（200回分）：どれも作れて、1回の中で同じ問題が出ず、最短の枚数が少しずつ増える", await pe.evaluate(() => { const g = window.__sh; for (let n = 0; n < 200; n++) { const P = g.endlessList().map(g.probOf); if (!P.every(Boolean)) return false; if (new Set(P.map((p) => p.s + ":" + p.g)).size !== P.length) return false; const d = P.map((p) => p.d); if (!d.every((x, i) => i === 0 || x >= d[i - 1])) return false; } return true; }));
     check("ホームに「とことん」の大きなボタン", (await pe.locator("#go-e.main").count()) === 1);
+    await firstClose(pe);
     check("はじめて開いた日から、ホームで上級・とことん・練習を押せる（🔒で開くモードが無い）", (await pe.locator("#go-h:not([disabled])").count()) === 1 && (await pe.locator("#go-p:not([disabled])").count()) === 1 && !/すると開く|🔒/.test(await pe.textContent("body")));
     await pe.click("#go-e");
     for (let j = 0; j < 3; j++) { await solveNow(pe); await pe.click("#next"); }
