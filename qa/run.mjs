@@ -48,6 +48,8 @@ const W = T.W, yomi = (i) => W[i][1];
 }
 
 const html = readFileSync(path.join(root, "index.html"), "utf8");
+// ひな形の写し（<!-- 名前:begin〜end -->）はゲームの言葉ではないので外し、Core.kofi・Core.KOFI は写す前の形にもどして見る（shared-workflows の sync-template が足した）
+const gameOwn = (t) => t.replace(/<!-- ([a-z0-9-]+):begin[\s\S]*?<!-- \1:end -->/g, "").split("${Core.KOFI}").join("https://ko-fi.com/satouaaaaa").replace(/Core\.kofi\(("(?:[^"\\]|\\.)*"), ("(?:[^"\\]|\\.)*")\)/g, (m, a, b) => "`<p class=\"note kofi\">" + JSON.parse(a) + "、<a href=\"https://ko-fi.com/satouaaaaa\" target=\"_blank\" rel=\"noopener\">Ko-fi でコーヒー1杯の応援</a>をもらえると、" + JSON.parse(b) + "の励みになります（任意・遊ぶのはずっと無料）。</p>`");
 check("終えた回を消すのは同じ回のときだけ・0時を過ぎたホームの「今日」のボタンは描き直す（2026-11-04 CodeRabbit）", /c\.date === run\.date && c\.id === run\.id\) s2\.runs\[MODE\] = null/.test(html) && /\$\("go-d"\)\.onclick = \(\) => \(k !== todayKey\(\) \? home\(\)/.test(html));
 check("別のタブで今日の分を終えたあと、古い画面から今日・上級をもう一度始めない（2026-11-04 CodeRabbit）", /\(mode === "d" && s\.days\[k\]\) \|\| \(mode === "h" && s\.hdays\[k\]\)\) return;/.test(html));
 check("README の URL のすぐ後ろに全角の字を続けない（Link check が URL の一部と読む。2026-11-04）", !/https?:\/\/[\x21-\x7e]*[^\x00-\x7f]/.test(readFileSync(new URL("../README.md", import.meta.url), "utf8").replace(/\]\(https?:\/\/[^)\s]+\)/g, "").replace(/<https?:\/\/[^>\s]+>/g, "")));
@@ -56,8 +58,8 @@ const ext = [...html.matchAll(/(?:src|href)="(https?:[^"]+)"/g)].map((m) => m[1]
 check("外から読むのは文字（Google Fonts）だけ。スクリプト・広告・解析を入れない", ext.length === 0, ext.join(","));
 check("CSP で通信先を自分だけにしている", /connect-src 'self'/.test(html) && !/connect-src[^;"]*https/.test(html));
 check("Math.random は練習・とことんの問題の種だけ（今日の3問・上級は日付の種）", (html.match(/Math\.random/g) || []).length === 3 && !/Math\.random/.test(readFileSync(path.join(root, "gen.js"), "utf8")));
-check("好きなだけ遊べる：🎫・チケット・「…すると開く」の印が無い（2026-11-06 satou さん）", !/🎫|チケット|すると開く|🔒/.test(html) && !/\blife\b/.test(html.replace(/<!-- a11y:begin -->[\s\S]*?<!-- a11y:end -->/, "")));
-check("Ko-fi はフッターの1行と、結果の画面の1行（初めて全部最短で終えたとき）だけ", (html.match(/ko-fi\.com\/satouaaaaa/g) || []).length === 2 && /const footer = [^\n]*ko-fi/.test(html) && /\$\{showKofi \? `<p class="note kofi">/.test(html) && !/kofi/.test(html.slice(html.indexOf("function home("), html.indexOf("function finish("))));
+check("好きなだけ遊べる：🎫・チケット・「…すると開く」の印が無い（2026-11-06 satou さん）", !/🎫|チケット|すると開く|🔒/.test(gameOwn(html)) && !/\blife\b/.test(gameOwn(html).replace(/<!-- a11y:begin -->[\s\S]*?<!-- a11y:end -->/, "")));
+check("Ko-fi はフッターの1行と、結果の画面の1行（初めて全部最短で終えたとき）だけ", (gameOwn(html).match(/ko-fi\.com\/satouaaaaa/g) || []).length === 2 && /const footer = [^\n]*ko-fi/.test(gameOwn(html)) && /\$\{showKofi \? `<p class="note kofi">/.test(gameOwn(html)) && !/kofi/.test(gameOwn(html).slice(gameOwn(html).indexOf("function home("), gameOwn(html).indexOf("function finish("))));
 check("画面にお笑いの言葉を入れない（本物っぽく）", !/お笑い|ギャグ|ボケ|ツッコミ|なんでやねん|（うそ）/.test(html));
 { const og = (k) => (html.match(new RegExp(`<meta (?:property|name)="${k}" content="([^"]+)"`)) || [])[1] || "";
   const png = readFileSync(path.join(root, "og.png"));
@@ -202,7 +204,7 @@ try {
   const share = await page.textContent(".share");
   const r3 = await page.evaluate(() => { const g = window.__sh; return g.load().days[g.todayKey()].r; });
   check("3問で結果・シェアの文は番号と色だけ（言葉を出さない）", /しりとり最短 #\d+/.test(share) && /^💡/.test(share.split("\n")[1] || "") && r3.length === 3 && !(await page.evaluate(() => { const g = window.__sh; return g.dailyList(g.todayKey()).map(g.probOf).flatMap((p) => [p.s, p.g]).map((i) => g.T.W[i][0]); })).some((w) => share.includes(w)));
-  check("X・LINE は押したときに開くリンクだけ", /^https:\/\/twitter\.com\/intent\/tweet\?text=/.test(await page.getAttribute("#toX", "href")) && /^https:\/\/line\.me\/R\/share\?text=/.test(await page.getAttribute("#toLine", "href")));
+  check("X・LINE は押したときに開くリンクだけ", /^https:\/\/(?:x|twitter)\.com\/intent\/tweet\?text=/.test(await page.getAttribute("#toX", "href")) && /^https:\/\/line\.me\/R\/share\?text=/.test(await page.getAttribute("#toLine", "href")));
   check("結果に3問の出発・目的と回数が出る", (await page.locator(".res div").count()) === 3);
   check("ヒントを使った日は Ko-fi のひとことを出さない", (await page.locator(".kofi").count()) === 0);
   await page.click("#back");
